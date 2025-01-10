@@ -1,58 +1,194 @@
 # TaskTitan
 
-TaskTitan is a feature-rich and modern task management application designed to help users organize their goals, habits, routines, and productivity sessions effectively. With a sleek interface, advanced features, and customization options, TaskTitan ensures a seamless experience for planning and managing your time.
+ TaskTitan is a feature-rich and modern task management application designed to help users organize their goals, habits, routines, and productivity sessions effectively. With a sleek interface, advanced features, and customization options, TaskTitan ensures a seamless experience for planning and managing your time.
 
----
+ ---
 
-## 🚀 Features
+ ## 🚀 Features
 
-### **Core Features**
-- **Goal Management**:
-  - Add, edit, delete, and organize hierarchical goals.
-  - Set priorities, tags, due dates, and attachments.
-  - Automatically calculate and display days left for each goal.
+ ### **Core Features**
+ - **Goal Management**:
+   - Add, edit, delete, and organize hierarchical goals.
+   - Set priorities, tags, due dates, and attachments.
+   - Automatically calculate and display days left for each goal.
 
-- **Habit Tracking**:
-  - Create recurring habits with time and day specifications.
-  - Integrated habit progress into the daily planner.
+ - **Habit Tracking**:
+   - Create recurring habits with time and day specifications.
+   - Integrated habit progress into the daily planner.
 
-- **Routine Management**:
-  - Schedule routines with start and end dates.
-  - Assign specific days of the week for better flexibility.
+ - **Routine Management**:
+   - Schedule routines with start and end dates.
+   - Assign specific days of the week for better flexibility.
 
-- **Daily Planner**:
-  - Populate tasks, habits, routines, and goals for each day.
-  - Integrated calendar view for efficient planning.
+ - **Daily Planner**:
+   - Populate tasks, habits, routines, and goals for each day.
+   - Integrated calendar view for efficient planning.
 
-- **Pomodoro Timer**:
-  - Focus timer with customizable work and break intervals.
-  - Distraction tracking for improved productivity insights.
+ - **Pomodoro Timer**:
+   - Focus timer with customizable work and break intervals.
+   - Distraction tracking for improved productivity insights.
 
-### **Customization**
-- **Color Themes**:
-  - Elegant dark mode with customizable colors.
-  - Choose specific colors for calendar elements and UI highlights.
+ ### **Customization**
+ - **Color Themes**:
+   - Elegant dark mode with customizable colors.
+   - Choose specific colors for calendar elements and UI highlights.
 
-- **Customizable Goals and Events**:
-  - Attach files, assign tags, and organize by priority.
-  - Export and import plans in JSON or CSV formats.
+ - **Customizable Goals and Events**:
+   - Attach files, assign tags, and organize by priority.
+   - Export and import plans in JSON or CSV formats.
 
-- **Visualization**:
-  - Analyze your progress with charts and visual breakdowns.
+ - **Visualization**:
+   - Analyze your progress with charts and visual breakdowns.
 
-### **Data Management**
-- Backup and restore your data securely.
-- Import/export goals, habits, and events in CSV or JSON formats.
+ ### **Data Management**
+ - Backup and restore your data securely.
+ - Import/export goals, habits, and events in CSV or JSON formats.
 
----
+ ---
 
-## 📦 Installation
+ ## 📦 Installation
 
-### **Using Python and PyInstaller**
-Clone the repository:
-   ```bash
-  git clone https://github.com/mahan2079/TaskTitan.git
-```
+ ### **Using Python and PyInstaller**
+ 1. Clone the repository:
+    ```bash
+    git clone https://github.com/yourusername/TaskTitan.git
+    ```
+ 2. Navigate to the project directory:
+    ```bash
+    cd TaskTitan
+    ```
+ 3. Install the required dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+ 4. Run the application:
+    ```bash
+    python TaskTitan.py
+    ```
+
+ ### **Build an Executable**
+ To package the application into an executable:
+ 1. Install PyInstaller:
+    ```bash
+    pip install pyinstaller
+    ```
+ 2. Create the executable:
+    ```bash
+    pyinstaller --onefile --icon=icon.ico TaskTitan.py
+    ```
+ 3. The `.exe` file will be available in the `dist` folder.
+
+ ---
+
+ ## 🖌️ Customization
+
+ ### **Changing Colors**
+ You can modify the application's color palette by editing the `colors_config.json` file. Here’s an example configuration:
+ ```json
+ {
+     "calendar_color": "#1E1E2E",
+     "past_week_color": "#2A2E45",
+     "current_week_color": "#4F46E5",
+     "future_week_color": "#264653"
+ }
+ ```
+
+ ---
+
+ ## 🔧 Requirements
+
+ - Python 3.8 or later
+ - PyQt5
+ - Matplotlib
+ - SQLite3
+ - darkdetect
+
+ Install dependencies using:
+ ```bash
+ pip install -r requirements.txt
+ ```
+
+ ---
+
+ ## 📖 Usage
+
+ 1. **Setting Up**:
+    - Launch the application to start managing your tasks.
+    - Use the menu bar to set up preferences like birth date, theme colors, and backup options.
+
+ 2. **Creating Goals**:
+    - Navigate to the "Goals" tab.
+    - Add hierarchical goals and assign due dates, priorities, and tags.
+
+ 3. **Tracking Habits**:
+    - Define daily habits in the "Habits" tab.
+    - Automatically integrates habits into the daily planner.
+
+ 4. **Scheduling Routines**:
+    - Create routines with specific days and durations.
+    - Assign start and end dates for periodic tracking.
+
+ ---
+
+ ## 📊 Visualization
+
+ TaskTitan provides a "Visualization" tab to analyze:
+ - Progress of goals and habits.
+ - Weekly and monthly performance trends.
+
+ ---
+
+ ## 📁 Backup and Restore
+
+ ### **Backup**:
+ 1. Go to `File > Backup Data`.
+ 2. Choose a destination to save the `.db` file.
+
+ ### **Restore**:
+ 1. Go to `File > Restore Data`.
+ 2. Select a backup file to restore your data.
+
+ ---
+
+ ## 🛠️ Troubleshooting
+
+ ### Common Issues:
+ 1. **Missing Dependencies**:
+    - Ensure all dependencies are installed:
+      ```bash
+      pip install -r requirements.txt
+      ```
+
+ 2. **Application Crashes**:
+    - Check the log file (`TaskTitan.log`) for detailed error messages.
+    - Ensure that the `planner.db` database is accessible.
+
+ ---
+
+ ## 🤝 Contributing
+
+ We welcome contributions! To contribute:
+ 1. Fork the repository.
+ 2. Create a new branch for your feature:
+    ```bash
+    git checkout -b feature-name
+    ```
+ 3. Commit your changes:
+    ```bash
+    git commit -m "Added feature"
+    ```
+ 4. Push your branch and create a pull request.
+
+ ---
+
+ ## 📞 Support
+
+ For help or feedback, contact:
+ - Email: mahan.dashiti.gohari@gmail.com
+
+"""
+
+
 **License**
                                  Apache License
                            Version 2.0, January 2004
