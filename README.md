@@ -1,6 +1,7 @@
 # TaskTitan
 
-![TaskTitan Logo](Logo.png)
+<img src="Logo.png" alt="TaskTitan Logo" width="300">
+
 
  TaskTitan is a feature-rich and modern task management application designed to help users organize their goals, habits, routines, and productivity sessions effectively. With a sleek interface, advanced features, and customization options, TaskTitan ensures a seamless experience for planning and managing your time.
 
