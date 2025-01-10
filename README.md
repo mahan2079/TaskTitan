@@ -54,7 +54,7 @@
  ### **Using Python and PyInstaller**
  1. Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/TaskTitan.git
+    git clone https://github.com/mahan2079/TaskTitan.git
     ```
  2. Navigate to the project directory:
     ```bash
