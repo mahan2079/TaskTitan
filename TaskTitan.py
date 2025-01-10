@@ -218,195 +218,229 @@ class SmartScheduler(QMainWindow):
 
     def apply_dark_theme(self):
         """
-        Applies a delicate, modern, and user-friendly dark theme with refined color
-        choices and improved UI interactions.
+        Applies a sophisticated, modern, and user-friendly dark theme with elegant purple and warm orange accents.
+        Enhances UI interactions with refined color choices for a vibrant and visually appealing interface.
         """
         dark_stylesheet = """
+        /* General Window and Dialog Background */
         QMainWindow, QDialog {
-            background-color: #14112B;  /* Midnight purple backdrop */
-            color: #F1EEFB;  /* Slightly off-white text for comfortable contrast */
-            margin: 0px;
-            padding: 0px;
-            font-family: 'Segoe UI', sans-serif;
-            font-size: 13px;
+            background-color: #121212;  /* Deep charcoal for a sleek backdrop */
+            color: #E0E0E0;             /* Soft white for high readability */
+            font-family: 'Segoe UI', sans-serif;  /* Modern and clean font */
+            font-size: 14px;
         }
+
+        /* All Widgets */
         QWidget {
-            background-color: #14112B;
-            color: #F1EEFB;
+            background-color: #1E1E1E;  /* Slightly lighter than main window for contrast */
+            color: #E0E0E0;
             border: none;
-            margin: 0px;
             padding: 0px;
-            border-radius: 10px;
+            margin: 0px;
         }
+
+        /* Input Fields */
         QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QDateEdit, QTimeEdit, QSpinBox, QDoubleSpinBox {
-            background-color: rgba(62, 45, 97, 0.85); /* Soft purple with transparency */
-            color: #F1EEFB;
-            padding: 10px;
-            border-radius: 14px;
-            border: 1px solid #63577E; /* Muted border to blend nicely */
-            transition: background-color 0.3s ease, border-color 0.3s ease;
+            background-color: #2C2C2C;  /* Dark grey for input backgrounds */
+            color: #FFFFFF;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #555555;
         }
-        QLineEdit:hover, QPlainTextEdit:hover, QTextEdit:hover, QComboBox:hover,
-        QDateEdit:hover, QTimeEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {
-            background-color: rgba(72, 55, 108, 0.95); /* Slightly brighter purple on hover */
-            border-color: #B29FFF; /* Soft lavender accent for hover */
+        QLineEdit:hover, QPlainTextEdit:hover, QTextEdit:hover, QComboBox:hover, QDateEdit:hover, QTimeEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {
+            background-color: #383838;  /* Slightly lighter on hover */
+            border-color: #BB86FC;      /* Elegant purple accent on hover */
         }
+
+        /* Tables and Tree Widgets */
         QTreeWidget, QTableWidget, QTreeView {
-            background-color: rgba(52, 38, 75, 0.8); /* Rich background for table elements */
-            color: #F1EEFB;
-            alternate-background-color: rgba(45, 34, 67, 0.6);
-            border-radius: 10px;
-            padding: 6px;
+            background-color: #252525;  /* Darker background for table elements */
+            color: #E0E0E0;
+            alternate-background-color: #303030;  /* Alternating row colors for readability */
+            border-radius: 8px;
+            padding: 4px;
         }
         QHeaderView::section {
-            background-color: rgba(90, 72, 125, 0.85); /* Subtle purple for headers */
-            color: #F1EEFB;
-            padding: 10px;
+            background-color: #3C3C3C;  /* Header background with purple tint */
+            color: #FFFFFF;
+            padding: 8px;
+            border: none;
+            font-weight: bold;
+        }
+
+        /* Buttons */
+        QPushButton {
+            background-color: #BB86FC;  /* Elegant purple */
+            color: #000000;
+            padding: 10px 20px;
             border-radius: 8px;
             border: none;
-        }
-        QPushButton {
-            background-color: qlineargradient(
-                spread:pad, x1:0.3, y1:0.3, x2:1, y2:1,
-                stop:0 #8257E5, stop:1 #BB86FC
-            );
-            color: #FFFFFF;
-            padding: 12px;
-            border-radius: 16px;
-            border: none;
-            transition: background-color 0.3s ease, transform 0.3s ease;
+            transition: background-color 0.3s ease, transform 0.2s ease;
             font-weight: bold;
         }
         QPushButton:hover {
-            background-color: #BB86FC; /* Brighter hover color */
-            transform: scale(1.05);
+            background-color: #9A67EA;  /* Slightly darker purple on hover */
+            transform: scale(1.05);     /* Subtle grow effect */
         }
+        QPushButton:pressed {
+            background-color: #7B4AED;  /* Even darker purple when pressed */
+        }
+
+        /* Labels */
         QLabel {
-            color: #F1EEFB;
+            color: #E0E0E0;
             font-weight: 500;
         }
+
+        /* Tabs */
         QTabWidget::pane {
-            background-color: rgba(20, 17, 43, 0.85);
-            border-radius: 14px;
-            padding: 6px;
-            backdrop-filter: blur(10px);
+            background-color: #1E1E1E;
+            border: none;
         }
         QTabBar::tab {
-            background-color: rgba(75, 63, 105, 0.8);
-            color: #F1EEFB;
-            padding: 12px;
-            border-radius: 12px;
-            margin: 4px;
-            transition: background-color 0.4s ease, transform 0.3s ease;
+            background-color: #2C2C2C;
+            color: #E0E0E0;
+            padding: 10px 20px;
+            border-radius: 6px;
+            margin: 2px;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
         QTabBar::tab:selected {
-            background-color: #63577E;
-            font-weight: bold;
-            transform: scale(1.05);
+            background-color: #BB86FC;  /* Purple highlight for selected tab */
+            color: #000000;
         }
+        QTabBar::tab:hover {
+            background-color: #3C3C3C;
+        }
+
+        /* Menu Bar */
         QMenuBar {
-            background-color: #14112B;
-            color: #F1EEFB;
+            background-color: #1E1E1E;
+            color: #E0E0E0;
             border: none;
+        }
+        QMenuBar::item:selected {
+            background-color: #3C3C3C;
         }
         QMenu {
-            background-color: rgba(52, 38, 75, 0.85);
-            color: #F1EEFB;
-            border-radius: 10px;
-            backdrop-filter: blur(8px);
+            background-color: #2C2C2C;
+            color: #E0E0E0;
+            border-radius: 6px;
         }
         QMenu::item:selected {
-            background-color: #8257E5; /* Purple accent on hover */
+            background-color: #BB86FC;
+            color: #000000;
         }
+
+        /* Progress Bar */
         QProgressBar {
-            background-color: rgba(62, 45, 97, 0.6);
-            color: #F1EEFB;
-            border-radius: 12px;
+            background-color: #2C2C2C;
+            color: #BB86FC;
             border: none;
-            margin: 0px;
+            border-radius: 6px;
+            text-align: center;
         }
         QProgressBar::chunk {
-            background-color: #EE6FFF; /* Bright lilac chunk for visual pop */
+            background-color: #BB86FC;  /* Purple chunks */
+            border-radius: 6px;
         }
+
+        /* Checkboxes */
         QCheckBox {
-            color: #F1EEFB;
+            color: #E0E0E0;
         }
+
+        /* Scroll Areas */
         QScrollArea {
-            background-color: #14112B;
+            background-color: #1E1E1E;
             border: none;
-            margin: 0px;
         }
+
+        /* List Widgets and Scroll Bars */
         QListWidget, QScrollBar {
-            background-color: rgba(75, 63, 105, 0.8);
-            color: #F1EEFB;
-            border-radius: 10px;
-            border: none;
+            background-color: #2C2C2C;
+            color: #E0E0E0;
+            border-radius: 6px;
         }
         QScrollBar:horizontal, QScrollBar:vertical {
-            background-color: rgba(62, 45, 97, 0.6);
-            border-radius: 10px;
+            background-color: #1E1E1E;
+            border-radius: 6px;
         }
         QScrollBar::handle:horizontal, QScrollBar::handle:vertical {
-            background-color: #63577E;  /* Modern handle with a gentle accent */
-            border-radius: 8px;
+            background-color: #BB86FC;  /* Purple handles */
+            border-radius: 4px;
         }
         QScrollBar::add-line, QScrollBar::sub-line {
             background-color: #BB86FC;
-            border-radius: 8px;
+            border-radius: 4px;
         }
         QScrollBar::add-page, QScrollBar::sub-page {
-            background-color: rgba(45, 34, 67, 0.5);
+            background-color: #1E1E1E;
         }
-        QCalendarWidget {
-            background-color: rgba(20, 17, 43, 0.85);
-            color: #F1EEFB;
-            border-radius: 14px;
-            margin: 0px;
-            padding: 6px;
-            backdrop-filter: blur(8px);
-        }
-        QCalendarWidget QAbstractItemView {
-            background-color: rgba(52, 38, 75, 0.75);
-            selection-background-color: #EE6FFF;
-            color: #F1EEFB;
-            selection-color: #FFFFFF;
-            gridline-color: #615875;
-            margin: 0px;
-        }
-        QCalendarWidget QToolButton {
-            background-color: rgba(100, 66, 148, 0.8);
-            color: #F1EEFB;
-            border-radius: 10px;
-            padding: 10px;
-            backdrop-filter: blur(8px);
-        }
-        QCalendarWidget QToolButton:hover {
-            background-color: #BBA4ED;  /* Brighter on hover */
-        }
-        QCalendarWidget QSpinBox {
-            background-color: rgba(62, 45, 97, 0.75);
-            color: #F1EEFB;
-            border-radius: 10px;
-        }
-        QCalendarWidget QHeaderView {
-            background-color: #63577E;
-            color: #F1EEFB;
-            border: none;
-        }
-        QCalendarWidget QWidget#qt_calendar_navigationbar {
-            background-color: rgba(55, 45, 95, 0.85);
-        }
-        QCalendarWidget QTableView {
-            alternate-background-color: rgba(45, 34, 67, 0.5);
-            gridline-color: #615875;
-        }
-        QCalendarWidget QTableView::item {
-            color: #F1EEFB;
-        }
+
+        /* Calendar Widget */
+    QCalendarWidget {
+        background-color: #1E1E1E; /* Deep dark background for the calendar */
+        color: #000000;           /* Default text color for calendar elements set to black */
+        border: none;
+        font-size: 14px;
+    }
+    QCalendarWidget QAbstractItemView {
+        background-color: #2C2C2C;               /* Slightly lighter background for dates */
+        selection-background-color: #FF7043;    /* Vibrant orange for selected dates */
+        color: #000000;                         /* Black text for default and selected dates */
+        selection-color: #000000;               /* Ensure selected date text is also black */
+        gridline-color: #FFA726;                /* Subtle orange for gridlines */
+    }
+    QCalendarWidget QAbstractItemView::item {
+        color: #000000;                         /* Default text color for dates */
+        padding: 4px;                           /* Add spacing for readability */
+    }
+
+    /* Weekday Column Backgrounds (Monday to Sunday) */
+    QCalendarWidget QTableView {
+        alternate-background-color: #2E2E2E;   /* Alternating row colors */
+        gridline-color: #FFA726;                /* Subtle orange for gridlines */
+    }
+    QCalendarWidget QTableView::item:enabled {
+        background-color: #E0F7FA;             /* Light bluish background for enabled weekdays */
+        color: #000000;                        /* Black text for visibility */
+    }
+    QCalendarWidget QTableView::item:enabled:alternate {
+        background-color: #B2EBF2;             /* Slightly darker bluish background for alternating rows */
+    }
+
+    /* Navigation Buttons */
+    QCalendarWidget QToolButton {
+        background-color: #FF7043;             /* Warm orange for navigation buttons */
+        color: #000000;                        /* Black text for contrast */
+        border-radius: 6px;                    /* Rounded buttons for modern design */
+        padding: 4px;                          /* Comfortable padding */
+        font-weight: bold;                     /* Bold text for visibility */
+    }
+    QCalendarWidget QToolButton:hover {
+        background-color: #FF5722;             /* Darker orange on hover for interactivity */
+    }
+
+    /* Spin Box in Calendar */
+    QCalendarWidget QSpinBox {
+        background-color: #2C2C2C;             /* Dark grey for spin box */
+        color: #000000;                        /* Black text for readability */
+        border-radius: 6px;                    /* Rounded corners */
+        padding: 4px;                          /* Padding for better spacing */
+    }
+
+    /* Header (Day Names) */
+    QCalendarWidget QHeaderView {
+        background-color: #4DD0E1;             /* Bright bluish header background */
+        color: #000000;                        /* Black text for contrast */
+        border: none;                          /* Clean header look without borders */
+    }
+
+
         """
         # Apply the dark theme stylesheet to the entire application
         self.setStyleSheet(dark_stylesheet)
-
 
     def load_colors(self):
         try:
