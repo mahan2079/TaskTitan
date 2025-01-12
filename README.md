@@ -12,15 +12,13 @@
  ### **Core Features**
  - **Goal Management**:
    - Add, edit, delete, and organize hierarchical goals.
-   - Set priorities, tags, due dates, and attachments.
-   - Automatically calculate and display days left for each goal.
-
+   - 
  - **Habit Tracking**:
    - Create recurring habits with time and day specifications.
    - Integrated habit progress into the daily planner.
 
  - **Routine Management**:
-   - Schedule routines with start and end dates.
+   - Schedule routines.
    - Assign specific days of the week for better flexibility.
 
  - **Daily Planner**:
