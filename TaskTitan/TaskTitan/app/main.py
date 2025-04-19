@@ -4,8 +4,17 @@ import asyncio
 import qasync
 from PyQt6.QtWidgets import QApplication
 
-from app.views.main_window import TaskTitanApp
-from app.resources import get_resource_path, APP_NAME, APP_VERSION
+# Fix the import paths when running the script directly
+if __name__ == "__main__":
+    # Add the parent directory to the path so 'app' can be found
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, parent_dir)
+    from views.main_window import TaskTitanApp
+    from resources import get_resource_path, APP_NAME, APP_VERSION
+else:
+    # Normal import when imported as a module
+    from app.views.main_window import TaskTitanApp
+    from app.resources import get_resource_path, APP_NAME, APP_VERSION
 
 def main():
     """Main entry point for the modernized TaskTitan application."""
