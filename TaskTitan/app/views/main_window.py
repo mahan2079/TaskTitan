@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt, QSize, QDate, QTime, QTimer, pyqtSignal, QPropertyA
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor, QFont
 import darkdetect
 import pyqtgraph as pg
+import sqlite3
 
 from app.models.database import initialize_db
 from app.views.calendar_widget import ModernCalendarWidget
@@ -710,20 +711,28 @@ class TaskTitanApp(QMainWindow):
         else:
             self.focus_time.setText("0h")
         
-        # Weekly goal progress
-        self.cursor.execute("""
-            SELECT COUNT(*), SUM(completed)
-            FROM weekly_tasks
-            WHERE week_start_date = ?
-        """, (self.getStartOfWeek(),))
-        
-        result = self.cursor.fetchone()
-        if result and result[0] > 0:
-            weekly_task_count = result[0]
-            weekly_completed_count = result[1] or 0
-            weekly_progress = int((weekly_completed_count / weekly_task_count) * 100)
-            self.weekly_progress.setValue(weekly_progress)
-        else:
+        # Weekly goal progress - use safer query
+        try:
+            start_of_week = self.getStartOfWeek()
+            end_of_week = datetime.fromisoformat(start_of_week).date() + timedelta(days=6)
+            
+            # Query tasks between start and end of week
+            self.cursor.execute("""
+                SELECT COUNT(*), SUM(completed)
+                FROM weekly_tasks
+                WHERE date BETWEEN ? AND ?
+            """, (start_of_week, end_of_week.isoformat()))
+            
+            result = self.cursor.fetchone()
+            if result and result[0] > 0:
+                weekly_task_count = result[0]
+                weekly_completed_count = result[1] or 0
+                weekly_progress = int((weekly_completed_count / weekly_task_count) * 100)
+                self.weekly_progress.setValue(weekly_progress)
+            else:
+                self.weekly_progress.setValue(0)
+        except (sqlite3.Error, ValueError) as e:
+            print(f"Error loading weekly progress: {e}")
             self.weekly_progress.setValue(0)
 
     def getStartOfWeek(self):

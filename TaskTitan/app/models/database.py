@@ -3,20 +3,23 @@ from datetime import datetime, timedelta
 
 def initialize_db():
     """Initialize the database with the required tables."""
-    conn = sqlite3.connect("planner.db")
+    conn = sqlite3.connect("tasktitan.db")
     cursor = conn.cursor()
+    
+    # Create goals table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS goals (
-                   
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             parent_id INTEGER,
             title TEXT NOT NULL,
             due_date DATE,
             due_time TIME,
             completed INTEGER DEFAULT 0,
-            FOREIGN KEY (parent_id) REFERENCES goals(id) ON DELETE CASCADE
+            priority INTEGER DEFAULT 1
         )
     """)
+    
+    # Create tasks table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,27 +30,50 @@ def initialize_db():
             FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE
         )
     """)
+    
+    # Drop weekly_tasks table if it exists (to resolve schema issues)
+    cursor.execute("DROP TABLE IF EXISTS weekly_tasks")
+    
+    # Create weekly_tasks table with correct schema
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS weekly_tasks (
+        CREATE TABLE weekly_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT DEFAULT '',
+            date DATE DEFAULT CURRENT_DATE,
+            start_time TIME DEFAULT '09:00',
+            end_time TIME DEFAULT '10:00',
+            category TEXT DEFAULT 'Other',
+            completed INTEGER DEFAULT 0,
             parent_id INTEGER,
-            week_start_date DATE NOT NULL,
-            title TEXT NOT NULL,
             description TEXT,
             due_date DATE,
             due_time TIME,
-            completed INTEGER DEFAULT 0,
-            FOREIGN KEY (parent_id) REFERENCES weekly_tasks(id) ON DELETE CASCADE
+            week_start_date DATE DEFAULT CURRENT_DATE
         )
     """)
+    
+    # Create habits table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS habits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             time TEXT NOT NULL,
-            days_of_week TEXT NOT NULL
+            days_of_week TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_DATE
         )
     """)
+    
+    # Create habit_completions table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS habit_completions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            habit_id INTEGER NOT NULL,
+            completion_date DATE NOT NULL,
+            FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE
+        )
+    """)
+    
+    # Create events table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,12 +84,16 @@ def initialize_db():
             completed INTEGER DEFAULT 0
         )
     """)
+    
+    # Create daily_notes table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS daily_notes (
             date DATE PRIMARY KEY,
             note TEXT
         )
     """)
+    
+    # Create productivity_sessions table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS productivity_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,8 +107,18 @@ def initialize_db():
         )
     """)
     
-    # Update the schema for weekly_tasks
-    update_database_schema(cursor)
+    # Create pomodoro_sessions table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pomodoro_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task TEXT NOT NULL,
+            duration INTEGER NOT NULL,
+            start_time TIMESTAMP NOT NULL,
+            end_time TIMESTAMP,
+            completed INTEGER DEFAULT 0,
+            date DATE DEFAULT CURRENT_DATE
+        )
+    """)
     
     conn.commit()
     return conn, cursor
@@ -86,26 +126,16 @@ def initialize_db():
 def update_database_schema(cursor):
     """Update database schema for existing tables."""
     try:
-        cursor.execute("ALTER TABLE weekly_tasks ADD COLUMN parent_id INTEGER")
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-
-    try:
-        cursor.execute("ALTER TABLE weekly_tasks ADD COLUMN title TEXT")
+        cursor.execute("ALTER TABLE weekly_tasks ADD COLUMN category TEXT")
     except sqlite3.OperationalError:
         pass  # Column already exists
     
     try:
-        cursor.execute("ALTER TABLE weekly_tasks ADD COLUMN description TEXT")
+        cursor.execute("ALTER TABLE goals ADD COLUMN priority INTEGER DEFAULT 1")
     except sqlite3.OperationalError:
         pass  # Column already exists
     
     try:
-        cursor.execute("ALTER TABLE weekly_tasks ADD COLUMN due_date DATE")
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-    
-    try:
-        cursor.execute("ALTER TABLE weekly_tasks ADD COLUMN due_time TIME")
+        cursor.execute("ALTER TABLE habits ADD COLUMN created_at TEXT DEFAULT CURRENT_DATE")
     except sqlite3.OperationalError:
         pass  # Column already exists 
