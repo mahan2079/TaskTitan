@@ -4,7 +4,7 @@ from PyQt6.QtGui import QColor, QPainter, QPen, QBrush, QPalette
 
 class ModernCalendarWidget(QCalendarWidget):
     """A modern styled calendar widget for TaskTitan."""
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         

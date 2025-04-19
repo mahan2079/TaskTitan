@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFrame,
     QLabel, QPushButton, QToolBar, QTabWidget, QScrollArea, QStackedWidget,
-    QGridLayout, QSizePolicy, QSpacerItem, QMenu, QCalendarWidget, QProgressBar
+    QGridLayout, QSizePolicy, QSpacerItem, QMenu, QCalendarWidget, QProgressBar, QMessageBox
 )
 from PyQt6.QtCore import Qt, QSize, QDate, QTime, QTimer, pyqtSignal, QPropertyAnimation, QRect
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor, QFont
@@ -49,3 +49,35 @@ else:
 
 class TaskTitanApp(QMainWindow):
     """Main application window for TaskTitan with modern UI.""" 
+
+    # Add stubs for other required methods
+    def setupSidebar(self):
+        """Create sidebar for navigation."""
+        # Stub implementation
+        self.sidebarButtons = []
+        pass
+        
+    def setupDashboard(self):
+        """Set up the dashboard view."""
+        # Stub implementation
+        pass
+        
+    def setupToolbar(self):
+        """Set up the application toolbar."""
+        # Stub implementation
+        pass
+        
+    def changePage(self, index):
+        """Change the current page in the stacked widget."""
+        # Stub implementation
+        pass
+        
+    def loadData(self):
+        """Load initial data for the application."""
+        # Stub implementation
+        pass
+        
+    def refreshData(self):
+        """Refresh data periodically."""
+        # Stub implementation
+        pass

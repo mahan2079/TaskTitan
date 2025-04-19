@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QScrollArea, 
-                              QLabel, QHBoxLayout, QPushButton, QFrame)
+                              QLabel, QHBoxLayout, QPushButton, QFrame, QDialog, QLineEdit, QDateEdit, QComboBox, QDialogButtonBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QIcon, QFont
+from datetime import datetime
 
 from app.views.task_widget import TaskWidget
 from app.resources import get_icon
@@ -336,4 +337,75 @@ class TaskListView(QWidget):
     
     def getTasks(self):
         """Get the list of all tasks."""
-        return self.tasks.copy() 
+        return self.tasks.copy()
+        
+    def showAddTaskDialog(self):
+        """Show dialog to add a new task."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add New Task")
+        layout = QVBoxLayout(dialog)
+        
+        # Title field
+        title_layout = QHBoxLayout()
+        title_label = QLabel("Title:")
+        title_layout.addWidget(title_label)
+        title_input = QLineEdit()
+        title_layout.addWidget(title_input)
+        layout.addLayout(title_layout)
+        
+        # Due date field
+        date_layout = QHBoxLayout()
+        date_label = QLabel("Due Date:")
+        date_layout.addWidget(date_label)
+        date_input = QDateEdit()
+        date_input.setCalendarPopup(True)
+        date_input.setDate(datetime.now())
+        date_layout.addWidget(date_input)
+        layout.addLayout(date_layout)
+        
+        # Priority field
+        priority_layout = QHBoxLayout()
+        priority_label = QLabel("Priority:")
+        priority_layout.addWidget(priority_label)
+        priority_input = QComboBox()
+        priority_input.addItems(["Low", "Medium", "High"])
+        priority_layout.addWidget(priority_input)
+        layout.addLayout(priority_layout)
+        
+        # Category field
+        category_layout = QHBoxLayout()
+        category_label = QLabel("Category:")
+        category_layout.addWidget(category_label)
+        category_input = QLineEdit()
+        category_layout.addWidget(category_input)
+        layout.addLayout(category_layout)
+        
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(lambda: self.addTaskFromDialog(dialog, title_input.text(), date_input.date(), priority_input.currentIndex(), category_input.text()))
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        
+        dialog.setMinimumWidth(300)
+        dialog.exec()
+        
+    def addTaskFromDialog(self, dialog, title, due_date, priority, category):
+        """Add a task from the dialog data."""
+        if not title:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(dialog, "Error", "Title cannot be empty")
+            return
+        
+        # In a real app, you'd save to database and get a real ID
+        import random
+        task_id = random.randint(1000, 9999)
+        
+        date_str = due_date.toString("yyyy-MM-dd")
+        
+        self.addTask(task_id, title, date_str, priority, category if category else None)
+        dialog.accept()
+    
+    def refresh(self):
+        """Refresh tasks from data source."""
+        # In a real app, you'd reload from database
+        pass 

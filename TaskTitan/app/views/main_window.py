@@ -434,19 +434,19 @@ class TaskTitanApp(QMainWindow):
 
     def changePage(self, index):
         """Change the current page in the stacked widget."""
-        # Update sidebar button styles
+        self.content_stack.setCurrentIndex(index)
+        self.current_page = index
+        
+        # Update sidebar button styling
         for button in self.sidebarButtons:
             button.setProperty("selected", False)
             button.style().unpolish(button)
             button.style().polish(button)
-        
-        self.sidebarButtons[index].setProperty("selected", True)
-        self.sidebarButtons[index].style().unpolish(self.sidebarButtons[index])
-        self.sidebarButtons[index].style().polish(self.sidebarButtons[index])
-        
-        # Animate the transition
-        self.content_stack.setCurrentIndex(index)
-        self.current_page = index
+            
+        if index < len(self.sidebarButtons):
+            self.sidebarButtons[index].setProperty("selected", True)
+            self.sidebarButtons[index].style().unpolish(self.sidebarButtons[index])
+            self.sidebarButtons[index].style().polish(self.sidebarButtons[index])
 
     def loadData(self):
         """Load initial data for the dashboard."""
