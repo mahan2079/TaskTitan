@@ -4,7 +4,7 @@ Goal widget for TaskTitan.
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QScrollArea, QFrame, QTreeWidget, 
                            QTreeWidgetItem, QDialog, QLineEdit, QDateEdit, 
-                           QTimeEdit, QComboBox, QDialogButtonBox, QMessageBox)
+                           QTimeEdit, QComboBox, QDialogButtonBox, QMessageBox, QMenu)
 from PyQt6.QtCore import Qt, QDate, QTime, pyqtSignal
 from PyQt6.QtGui import QIcon, QFont
 from datetime import datetime
@@ -347,7 +347,7 @@ class GoalWidget(QWidget):
             
         goal_id = item.data(0, Qt.ItemDataRole.UserRole)
         
-        menu = QDialog.createPopupMenu()
+        menu = QMenu(self)
         
         edit_action = menu.addAction("Edit Goal")
         edit_action.triggered.connect(lambda: self.showEditGoalDialog(goal_id))
