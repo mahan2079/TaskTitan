@@ -7,8 +7,8 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QToolBar, QTabWidget, QScrollArea, QStackedWidget,
     QGridLayout, QSizePolicy, QSpacerItem, QMenu, QCalendarWidget, QProgressBar
 )
-from PyQt6.QtCore import Qt, QSize, QDate, QTime, QTimer, pyqtSignal, QPropertyAnimation, QRect
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor, QFont
+from PyQt6.QtCore import Qt, QSize, QDate, QTime, QTimer, pyqtSignal, QPropertyAnimation, QRect, QRectF
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor, QFont, QPainter, QBrush, QPen
 import darkdetect
 import pyqtgraph as pg
 import sqlite3
@@ -25,6 +25,9 @@ from app.views.daily_view import DailyView
 from app.views.settings_dialog import SettingsDialog
 from app.views.task_list_view import TaskListView
 from app.resources import get_icon, get_pixmap, VIEW_NAMES, DASHBOARD_VIEW, TASKS_VIEW, GOALS_VIEW, HABITS_VIEW, PRODUCTIVITY_VIEW, POMODORO_VIEW, WEEKLY_VIEW, DAILY_VIEW, SETTINGS_VIEW
+
+# Import custom progress chart to avoid QRectF issues
+from app.views.custom_progress import CircularProgressChart
 
 class TaskTitanApp(QMainWindow):
     """Main application window for TaskTitan with modern UI."""
@@ -201,8 +204,17 @@ class TaskTitanApp(QMainWindow):
 
     def setupDashboard(self):
         """Create a modern dashboard view with widgets."""
+        # Create a scrollable dashboard
         self.dashboard = QWidget()
-        dashboard_layout = QVBoxLayout(self.dashboard)
+        
+        # Create a scroll area to make dashboard scrollable
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        
+        # Create the container widget for the scrollable content
+        dashboard_container = QWidget()
+        dashboard_layout = QVBoxLayout(dashboard_container)
         dashboard_layout.setContentsMargins(20, 20, 20, 20)
         dashboard_layout.setSpacing(20)
         
@@ -229,13 +241,7 @@ class TaskTitanApp(QMainWindow):
         header_layout.addStretch()
         dashboard_layout.addLayout(header_layout)
         
-        # Main dashboard content - split into 2 columns
-        dashboard_content = QHBoxLayout()
-        
-        # Left column - Calendar and upcoming tasks
-        left_column = QVBoxLayout()
-        
-        # Calendar widget card
+        # Calendar widget card - full width, positioned at the top
         calendar_card = QFrame()
         calendar_card.setObjectName("calendar-card")
         calendar_card.setProperty("class", "card")
@@ -247,9 +253,17 @@ class TaskTitanApp(QMainWindow):
         
         self.dashboard_calendar = ModernCalendarWidget()
         self.dashboard_calendar.clicked.connect(self.openDailyView)
+        self.dashboard_calendar.setMinimumHeight(300)  # Make calendar bigger
         calendar_layout.addWidget(self.dashboard_calendar)
         
-        left_column.addWidget(calendar_card)
+        # Add full-width calendar to layout
+        dashboard_layout.addWidget(calendar_card)
+        
+        # Main dashboard content - split into 2 columns
+        dashboard_content = QHBoxLayout()
+        
+        # Left column - Upcoming tasks and habits
+        left_column = QVBoxLayout()
         
         # Upcoming tasks
         tasks_card = QFrame()
@@ -274,63 +288,59 @@ class TaskTitanApp(QMainWindow):
         tasks_layout.addLayout(self.tasks_container)
         
         left_column.addWidget(tasks_card)
+        
+        # Today's habits
+        habits_card = QFrame()
+        habits_card.setProperty("class", "card")
+        habits_layout = QVBoxLayout(habits_card)
+        
+        habits_header_layout = QHBoxLayout()
+        habits_header = QLabel("Today's Habits")
+        habits_header.setProperty("class", "dashboard-widget-header")
+        habits_header_layout.addWidget(habits_header)
+        
+        view_all_habits = QPushButton("View All")
+        view_all_habits.setProperty("class", "secondary")
+        view_all_habits.setFixedWidth(100)
+        view_all_habits.clicked.connect(lambda: self.changePage(3))  # Go to Habits page
+        habits_header_layout.addWidget(view_all_habits)
+        
+        habits_layout.addLayout(habits_header_layout)
+        
+        # Placeholder for habits list - will be populated in loadData()
+        self.habits_container = QVBoxLayout()
+        habits_layout.addLayout(self.habits_container)
+        
+        left_column.addWidget(habits_card)
         dashboard_content.addLayout(left_column, 1)
         
-        # Right column - stats, goals, habits
+        # Right column - stats, goals
         right_column = QVBoxLayout()
         
-        # Stats card
+        # Goal Progress card - with circular progress charts 
         stats_card = QFrame()
         stats_card.setProperty("class", "card")
         stats_layout = QVBoxLayout(stats_card)
         
-        stats_header = QLabel("Your Progress")
+        stats_header = QLabel("Goal Progress")
         stats_header.setProperty("class", "dashboard-widget-header")
         stats_layout.addWidget(stats_header)
         
-        # Stats grid
-        stats_grid = QGridLayout()
+        # Create circular progress widgets container
+        progress_container = QHBoxLayout()
         
-        # Task completion rate
-        self.task_completion_rate = QLabel("0%")
-        self.task_completion_rate.setProperty("class", "stat-item")
-        stats_grid.addWidget(self.task_completion_rate, 0, 0)
+        # We'll create a new custom circular progress chart for each metric
+        # These will be populated in loadStatistics()
+        self.task_completion_chart = CircularProgressChart("Task Completion", 0)
+        progress_container.addWidget(self.task_completion_chart)
         
-        task_completion_label = QLabel("Task Completion")
-        task_completion_label.setProperty("class", "stat-label")
-        stats_grid.addWidget(task_completion_label, 1, 0)
+        self.goal_progress_chart = CircularProgressChart("Goal Progress", 0)
+        progress_container.addWidget(self.goal_progress_chart)
         
-        # Habit streak
-        self.habit_streak = QLabel("0")
-        self.habit_streak.setProperty("class", "stat-item")
-        stats_grid.addWidget(self.habit_streak, 0, 1)
+        self.habit_streak_chart = CircularProgressChart("Habit Streak", 0, max_value=7)
+        progress_container.addWidget(self.habit_streak_chart)
         
-        habit_streak_label = QLabel("Day Streak")
-        habit_streak_label.setProperty("class", "stat-label")
-        stats_grid.addWidget(habit_streak_label, 1, 1)
-        
-        # Focus time
-        self.focus_time = QLabel("0h")
-        self.focus_time.setProperty("class", "stat-item")
-        stats_grid.addWidget(self.focus_time, 0, 2)
-        
-        focus_time_label = QLabel("Focus Time Today")
-        focus_time_label.setProperty("class", "stat-label")
-        stats_grid.addWidget(focus_time_label, 1, 2)
-        
-        stats_layout.addLayout(stats_grid)
-        
-        # Weekly progress
-        weekly_header = QLabel("Weekly Goal Progress")
-        weekly_header.setProperty("class", "dashboard-widget-header")
-        stats_layout.addWidget(weekly_header)
-        
-        self.weekly_progress = QProgressBar()
-        self.weekly_progress.setRange(0, 100)
-        self.weekly_progress.setValue(0)
-        self.weekly_progress.setFormat("%v%")
-        self.weekly_progress.setTextVisible(True)
-        stats_layout.addWidget(self.weekly_progress)
+        stats_layout.addLayout(progress_container)
         
         right_column.addWidget(stats_card)
         
@@ -358,32 +368,16 @@ class TaskTitanApp(QMainWindow):
         
         right_column.addWidget(goals_card)
         
-        # Today's habits
-        habits_card = QFrame()
-        habits_card.setProperty("class", "card")
-        habits_layout = QVBoxLayout(habits_card)
-        
-        habits_header_layout = QHBoxLayout()
-        habits_header = QLabel("Today's Habits")
-        habits_header.setProperty("class", "dashboard-widget-header")
-        habits_header_layout.addWidget(habits_header)
-        
-        view_all_habits = QPushButton("View All")
-        view_all_habits.setProperty("class", "secondary")
-        view_all_habits.setFixedWidth(100)
-        view_all_habits.clicked.connect(lambda: self.changePage(3))  # Go to Habits page
-        habits_header_layout.addWidget(view_all_habits)
-        
-        habits_layout.addLayout(habits_header_layout)
-        
-        # Placeholder for habits list - will be populated in loadData()
-        self.habits_container = QVBoxLayout()
-        habits_layout.addLayout(self.habits_container)
-        
-        right_column.addWidget(habits_card)
-        
         dashboard_content.addLayout(right_column, 1)
         dashboard_layout.addLayout(dashboard_content)
+        
+        # Set the scroll area's widget to the container
+        scroll_area.setWidget(dashboard_container)
+        
+        # Create a layout for the main dashboard widget
+        main_dashboard_layout = QVBoxLayout(self.dashboard)
+        main_dashboard_layout.setContentsMargins(0, 0, 0, 0)
+        main_dashboard_layout.addWidget(scroll_area)
         
         # Add dashboard to stack
         self.content_stack.addWidget(self.dashboard)
@@ -651,9 +645,9 @@ class TaskTitanApp(QMainWindow):
             task_count = result[0]
             completed_count = result[1] or 0
             completion_rate = int((completed_count / task_count) * 100)
-            self.task_completion_rate.setText(f"{completion_rate}%")
+            self.task_completion_chart.updateValue(completion_rate)
         else:
-            self.task_completion_rate.setText("0%")
+            self.task_completion_chart.updateValue(0)
         
         # Habit streak
         # This is a simplified calculation - in a real app you'd have a more sophisticated streak calculation
@@ -694,7 +688,7 @@ class TaskTitanApp(QMainWindow):
                 # Streak broken
                 break
         
-        self.habit_streak.setText(str(streak_days))
+        self.habit_streak_chart.updateValue(streak_days)
         
         # Focus time today
         self.cursor.execute("""
@@ -707,9 +701,9 @@ class TaskTitanApp(QMainWindow):
         if result and result[0]:
             focus_minutes = result[0]
             focus_hours = focus_minutes / 60.0
-            self.focus_time.setText(f"{focus_hours:.1f}h")
+            self.goal_progress_chart.updateValue(focus_hours)
         else:
-            self.focus_time.setText("0h")
+            self.goal_progress_chart.updateValue(0)
         
         # Weekly goal progress - use safer query
         try:
@@ -728,12 +722,12 @@ class TaskTitanApp(QMainWindow):
                 weekly_task_count = result[0]
                 weekly_completed_count = result[1] or 0
                 weekly_progress = int((weekly_completed_count / weekly_task_count) * 100)
-                self.weekly_progress.setValue(weekly_progress)
+                self.goal_progress_chart.updateValue(weekly_progress)
             else:
-                self.weekly_progress.setValue(0)
+                self.goal_progress_chart.updateValue(0)
         except (sqlite3.Error, ValueError) as e:
             print(f"Error loading weekly progress: {e}")
-            self.weekly_progress.setValue(0)
+            self.goal_progress_chart.updateValue(0)
 
     def getStartOfWeek(self):
         """Get the start date of the current week (Monday)."""
@@ -811,3 +805,4 @@ class TaskTitanApp(QMainWindow):
         """Logout the current user."""
         # This would be implemented in a real application
         pass 
+

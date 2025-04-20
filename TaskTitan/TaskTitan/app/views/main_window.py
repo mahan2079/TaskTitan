@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QToolBar, QTabWidget, QScrollArea, QStackedWidget,
     QGridLayout, QSizePolicy, QSpacerItem, QMenu, QCalendarWidget, QProgressBar, QMessageBox
 )
-from PyQt6.QtCore import Qt, QSize, QDate, QTime, QTimer, pyqtSignal, QPropertyAnimation, QRect
+from PyQt6.QtCore import Qt, QSize, QDate, QTime, QTimer, pyqtSignal, QPropertyAnimation, QRect, QRectF
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor, QFont
 import darkdetect
 import pyqtgraph as pg

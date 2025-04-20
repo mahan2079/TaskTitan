@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                            QTimeEdit, QComboBox, QDialogButtonBox, QMessageBox, QMenu,
                            QTabWidget, QGraphicsView, QGraphicsScene, QGraphicsRectItem, 
                            QGraphicsTextItem, QGraphicsLineItem, QSlider, QGraphicsItem,
-                           QGraphicsSceneWheelEvent, QGraphicsPathItem)
+                           QGraphicsSceneWheelEvent, QGraphicsPathItem, QGraphicsEllipseItem)
 from PyQt6.QtCore import Qt, QDate, QTime, pyqtSignal, QRectF, QPointF, QTimer
 from PyQt6.QtGui import QIcon, QFont, QColor, QPen, QBrush, QWheelEvent, QPainter, QPainterPath
 from datetime import datetime, timedelta
@@ -15,10 +15,81 @@ import random
 
 from app.resources import get_icon
 
+# Add import for circular progress chart if we're in a different file
+try:
+    from app.views.main_window import CircularProgressChart
+except ImportError:
+    # Define it here if it doesn't exist in main_window
+    class CircularProgressChart(QWidget):
+        """A circular progress chart widget that displays percentage completion."""
+        
+        def __init__(self, title, value, max_value=100, parent=None):
+            super().__init__(parent)
+            self.title = title
+            self.value = value
+            self.max_value = max_value
+            self.percentage = (value / max_value) * 100 if max_value > 0 else 0
+            self.setMinimumSize(140, 180)
+            self.setMaximumWidth(200)
+            
+            # Create layout and add title and value labels
+            layout = QVBoxLayout(self)
+            layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+            self.value_label = QLabel(f"{int(self.percentage)}%")
+            self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.value_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #4F46E5;")
+            
+            self.title_label = QLabel(self.title)
+            self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.title_label.setStyleSheet("font-size: 14px; color: #64748B;")
+            
+            # Add spacer at top to position labels below the chart
+            layout.addSpacing(100)
+            layout.addWidget(self.value_label)
+            layout.addWidget(self.title_label)
+            
+        def updateValue(self, value):
+            """Update the progress value and redraw."""
+            self.value = value
+            self.percentage = (value / self.max_value) * 100 if self.max_value > 0 else 0
+            self.value_label.setText(f"{int(self.percentage)}%")
+            self.update()
+            
+        def paintEvent(self, event):
+            """Draw the circular progress chart."""
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Define the rectangle for the chart
+            rect = QRectF(20, 10, 100, 100)
+            
+            # Calculate the span angle for the progress arc (360 * percentage / 100)
+            span_angle = int(360 * self.percentage / 100) * 16  # Qt uses 16ths of a degree
+            
+            # Draw background circle
+            painter.setPen(QPen(QColor("#E2E8F0"), 10, Qt.PenStyle.SolidLine))
+            painter.drawArc(rect, 0, 360 * 16)  # Full circle (360 degrees)
+            
+            # Draw progress arc
+            if self.percentage > 0:
+                # Use different colors based on completion percentage
+                if self.percentage < 30:
+                    color = QColor("#EF4444")  # Red for low progress
+                elif self.percentage < 70:
+                    color = QColor("#F59E0B")  # Orange/Yellow for medium progress
+                else:
+                    color = QColor("#10B981")  # Green for high progress
+                    
+                painter.setPen(QPen(color, 10, Qt.PenStyle.SolidLine))
+                painter.drawArc(rect, 90 * 16, -span_angle)  # Start from top (90 degrees)
+            
+            painter.end()
+
 class CustomGraphicsView(QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.parent_widget = parent
+        self.parent = parent
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
     
@@ -31,14 +102,14 @@ class CustomGraphicsView(QGraphicsView):
                 factor = 1.0 / factor
             
             # Get the zoom factor from parent
-            if hasattr(self.parent_widget, 'zoom_factor'):
-                self.parent_widget.zoom_factor = max(
-                    min(self.parent_widget.zoom_factor * factor, 
-                        self.parent_widget.max_zoom), 
-                    self.parent_widget.min_zoom
+            if hasattr(self.parent, 'zoom_factor'):
+                self.parent.zoom_factor = max(
+                    min(self.parent.zoom_factor * factor, 
+                        self.parent.max_zoom), 
+                    self.parent.min_zoom
                 )
-                self.parent_widget.zoom_slider.setValue(int(self.parent_widget.zoom_factor * 100))
-                self.parent_widget.applyZoom()
+                self.parent.zoom_slider.setValue(int(self.parent.zoom_factor * 100))
+                self.parent.applyZoom()
         else:
             # Normal scrolling
             super().wheelEvent(event)
@@ -507,6 +578,9 @@ class GoalTimelineWidget(QWidget):
     def addGoalToTimeline(self, goal, all_goals, level=0, y_pos=30):
         """Add a single goal and its sub-goals to the timeline."""
         try:
+            # Define colors array at the beginning of the method to make it available throughout
+            colors = ["#60A5FA", "#FBBF24", "#EF4444"]  # Blue, Yellow, Red for low, medium, high
+            
             # Get or derive start date and due date
             due_date = datetime.strptime(goal['due_date'], "%Y-%m-%d").date()
             
@@ -533,18 +607,68 @@ class GoalTimelineWidget(QWidget):
             # Create goal rectangle spanning from start to due date
             rect_height = 30
             
+            # Calculate progress percentage for this goal (get from parent widget if possible)
+            progress_percentage = 0
+            if hasattr(self.parent, 'calculateGoalProgress'):
+                progress_percentage = self.parent.calculateGoalProgress(goal)
+            elif goal['completed']:
+                progress_percentage = 100
+            
             # Choose color based on priority and completion
             if goal['completed']:
                 color = QColor("#10B981")  # Green for completed
             else:
-                colors = ["#60A5FA", "#FBBF24", "#EF4444"]  # Blue, Yellow, Red for low, medium, high
                 color = QColor(colors[goal['priority']])
             
             # Create the goal item
             rect = QGraphicsRectItem(x_start, y_pos, width, rect_height)
             rect.setPen(QPen(color.darker(), 1))
             rect.setBrush(QBrush(color.lighter()))
-            rect.setToolTip(f"{goal['title']}\nDue: {goal['due_date']} {goal['due_time']}")
+            
+            # Include progress percentage in the tooltip
+            rect.setToolTip(f"{goal['title']}\nDue: {goal['due_date']} {goal['due_time']}\nProgress: {progress_percentage}%")
+            
+            # Add a small circular progress indicator if not completed
+            if not goal['completed'] and progress_percentage > 0:
+                # Draw a small circular progress indicator
+                progress_diameter = 20
+                circle_x = x_start + width - progress_diameter - 5
+                circle_y = y_pos + (rect_height - progress_diameter) / 2
+                
+                # Create progress circle
+                progress_circle = QGraphicsEllipseItem(circle_x, circle_y, progress_diameter, progress_diameter)
+                progress_circle.setPen(QPen(Qt.PenStyle.NoPen))
+                progress_circle.setBrush(QBrush(QColor("#FFFFFF")))
+                
+                # Add progress arc
+                span_angle = int(360 * progress_percentage / 100) * 16  # Qt uses 16ths of a degree
+                
+                # Create a path for the progress arc
+                path = QPainterPath()
+                path.moveTo(circle_x + progress_diameter/2, circle_y + progress_diameter/2)
+                path.arcTo(circle_x, circle_y, progress_diameter, progress_diameter, 90, -span_angle)
+                path.closeSubpath()
+                
+                # Choose color based on progress
+                if progress_percentage < 30:
+                    progress_color = QColor("#EF4444")  # Red for low progress
+                elif progress_percentage < 70:
+                    progress_color = QColor("#F59E0B")  # Orange/Yellow for medium progress
+                else:
+                    progress_color = QColor("#10B981")  # Green for high progress
+                
+                progress_arc = QGraphicsPathItem(path)
+                progress_arc.setPen(QPen(Qt.PenStyle.NoPen))
+                progress_arc.setBrush(QBrush(progress_color))
+                
+                # Add percentage text
+                progress_text = QGraphicsTextItem(f"{progress_percentage}%")
+                progress_text.setPos(circle_x - 5, circle_y + progress_diameter + 2)
+                progress_text.setFont(QFont("Arial", 7))
+                
+                self.scene.addItem(progress_circle)
+                self.scene.addItem(progress_arc)
+                self.scene.addItem(progress_text)
             
             # Add special indicator for subgoals (small badge or marker)
             if level > 0:
@@ -574,7 +698,7 @@ class GoalTimelineWidget(QWidget):
             # Add goal text
             text = QGraphicsTextItem(goal['title'])
             text.setPos(x_start + 5, y_pos + 5)
-            text.setTextWidth(width - 10)
+            text.setTextWidth(width - 30)  # Reduce text width to make room for progress circle
             
             # Use a smaller font for longer titles
             font = QFont()
@@ -792,8 +916,8 @@ class GoalWidget(QWidget):
         # Goal tree widget
         self.goal_tree = QTreeWidget()
         self.goal_tree.setObjectName("goalTree")
-        self.goal_tree.setColumnCount(4)
-        self.goal_tree.setHeaderLabels(["Goal", "Due Date", "Due Time", "Status"])
+        self.goal_tree.setColumnCount(5)  # Added a column for progress percentage
+        self.goal_tree.setHeaderLabels(["Goal", "Due Date", "Due Time", "Progress", "Status"])
         self.goal_tree.setAlternatingRowColors(True)
         self.goal_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
         self.goal_tree.setAnimated(True)
@@ -803,10 +927,11 @@ class GoalWidget(QWidget):
         self.goal_tree.itemChanged.connect(self.handleItemStatusChanged)
         
         # Set column widths
-        self.goal_tree.setColumnWidth(0, 400)  # Goal title
+        self.goal_tree.setColumnWidth(0, 300)  # Goal title
         self.goal_tree.setColumnWidth(1, 100)  # Due date
-        self.goal_tree.setColumnWidth(2, 100)  # Due time
-        self.goal_tree.setColumnWidth(3, 100)  # Status
+        self.goal_tree.setColumnWidth(2, 80)   # Due time
+        self.goal_tree.setColumnWidth(3, 100)  # Progress
+        self.goal_tree.setColumnWidth(4, 80)   # Status
         
         tree_layout.addWidget(self.goal_tree)
         
@@ -953,8 +1078,8 @@ class GoalWidget(QWidget):
         # Add to our list
         self.goals.append(goal)
         
-        # Add to the tree
-        self.addGoalToTree(goal)
+        # Refresh the entire tree to ensure proper parent-child relationships
+        self.refreshGoalTree()
         
         # Emit signal
         self.goalAdded.emit(goal)
@@ -976,18 +1101,31 @@ class GoalWidget(QWidget):
         item.setText(2, goal['due_time'])
         item.setData(0, Qt.ItemDataRole.UserRole, goal['id'])
         
+        # Calculate progress percentage
+        progress = self.calculateGoalProgress(goal)
+        progress_text = f"{progress}%"
+        item.setText(3, progress_text)
+        
         # Set the status checkbox
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
         status = Qt.CheckState.Checked if goal['completed'] else Qt.CheckState.Unchecked
-        item.setCheckState(3, status)
+        item.setCheckState(4, status)
+        
+        # Set progress text color based on percentage
+        if progress < 30:
+            item.setForeground(3, QColor("#EF4444"))  # Red for low progress
+        elif progress < 70:
+            item.setForeground(3, QColor("#F59E0B"))  # Orange/Yellow for medium progress
+        else:
+            item.setForeground(3, QColor("#10B981"))  # Green for high progress
         
         # Set priority color
         if goal['priority'] == 0:  # Low
-            item.setBackground(0, Qt.GlobalColor.green)
+            item.setBackground(0, QColor("#D1FAE5"))  # Light green
         elif goal['priority'] == 1:  # Medium
-            item.setBackground(0, Qt.GlobalColor.yellow)
+            item.setBackground(0, QColor("#FEF3C7"))  # Light yellow
         else:  # High
-            item.setBackground(0, Qt.GlobalColor.red)
+            item.setBackground(0, QColor("#FEE2E2"))  # Light red
         
         # Add to parent or root
         if parent_item:
@@ -1005,56 +1143,337 @@ class GoalWidget(QWidget):
         
         return item
     
+    def calculateGoalProgress(self, goal):
+        """Calculate the progress percentage for a goal based on subgoals and time.
+        
+        Args:
+            goal: The goal to calculate progress for
+            
+        Returns:
+            int: Progress percentage (0-100)
+        """
+        # If goal is completed, return 100%
+        if goal['completed']:
+            return 100
+        
+        # Find all subgoals for this goal
+        subgoals = [g for g in self.goals if g['parent_id'] == goal['id']]
+        
+        # If there are no subgoals, calculate progress based on time
+        if not subgoals:
+            return self.calculateTimeBasedProgress(goal)
+        
+        # If there are subgoals, calculate based on subgoal completion and weighted by duration
+        total_duration = 0
+        completed_duration = 0
+        
+        for subgoal in subgoals:
+            try:
+                # Get the start and end dates for duration calculation
+                if 'created_date' in subgoal and subgoal['created_date']:
+                    start_date = datetime.strptime(subgoal['created_date'], "%Y-%m-%d").date()
+                else:
+                    due_date = datetime.strptime(subgoal['due_date'], "%Y-%m-%d").date()
+                    start_date = due_date - timedelta(days=7)  # Default 1 week duration if no start date
+                
+                due_date = datetime.strptime(subgoal['due_date'], "%Y-%m-%d").date()
+                
+                # Calculate duration in days (minimum 1 day)
+                duration = max(1, (due_date - start_date).days)
+                
+                # Add to total duration
+                total_duration += duration
+                
+                # If completed, add to completed duration
+                if subgoal['completed']:
+                    completed_duration += duration
+                else:
+                    # If not completed, add partial progress based on time
+                    subgoal_progress = self.calculateTimeBasedProgress(subgoal) / 100.0
+                    completed_duration += duration * subgoal_progress
+            except (ValueError, TypeError, KeyError):
+                # Skip if there are issues with the dates
+                continue
+        
+        # Calculate progress based solely on subgoal completion (100% model)
+        if total_duration > 0:
+            progress = (completed_duration / total_duration) * 100
+        else:
+            progress = 0
+            
+        return int(progress)
+    
+    def calculateTimeBasedProgress(self, goal):
+        """Calculate progress based on time elapsed.
+        
+        Args:
+            goal: The goal to calculate progress for
+            
+        Returns:
+            int: Progress percentage (0-100)
+        """
+        try:
+            # Get the start and due dates
+            if 'created_date' in goal and goal['created_date']:
+                start_date = datetime.strptime(goal['created_date'], "%Y-%m-%d").date()
+            else:
+                # Default to 2 weeks before due date
+                due_date = datetime.strptime(goal['due_date'], "%Y-%m-%d").date()
+                start_date = due_date - timedelta(days=14)
+            
+            due_date = datetime.strptime(goal['due_date'], "%Y-%m-%d").date()
+            today = datetime.now().date()
+            
+            # Calculate total duration and elapsed duration
+            total_days = (due_date - start_date).days
+            if total_days <= 0:  # Guard against invalid dates
+                return 0
+                
+            elapsed_days = (today - start_date).days
+            
+            # Calculate progress percentage
+            if elapsed_days < 0:  # Goal hasn't started yet
+                progress = 0
+            elif elapsed_days >= total_days:  # Goal is overdue
+                progress = 90  # Almost complete but not 100% until actually marked complete
+            else:
+                progress = (elapsed_days / total_days) * 100
+                
+            return int(progress)
+        except (ValueError, TypeError):
+            # Return 0 if there are date parsing errors
+            return 0
+    
     def handleItemStatusChanged(self, item, column):
         """Handle when a goal's status is changed."""
-        if column == 3:  # Status column
-            goal_id = item.data(0, Qt.ItemDataRole.UserRole)
-            completed = item.checkState(3) == Qt.CheckState.Checked
-            
-            # Update database if connection exists
-            if hasattr(self.parent, 'conn') and self.parent.conn:
-                try:
-                    self.parent.cursor.execute("""
-                        UPDATE goals
-                        SET completed = ?
-                        WHERE id = ?
-                    """, (1 if completed else 0, goal_id))
-                    self.parent.conn.commit()
-                except Exception as e:
-                    print(f"Error updating goal status in database: {e}")
-            
-            # Update our data
-            for goal in self.goals:
-                if goal['id'] == goal_id:
-                    goal['completed'] = completed
+        if column == 4:  # Status column
+            try:
+                # Temporarily block signals to prevent recursion
+                self.goal_tree.blockSignals(True)
+                
+                goal_id = item.data(0, Qt.ItemDataRole.UserRole)
+                completed = item.checkState(4) == Qt.CheckState.Checked
+                
+                # Update database if connection exists
+                if hasattr(self.parent, 'conn') and self.parent.conn:
+                    try:
+                        self.parent.cursor.execute("""
+                            UPDATE goals
+                            SET completed = ?
+                            WHERE id = ?
+                        """, (1 if completed else 0, goal_id))
+                        self.parent.conn.commit()
+                    except Exception as e:
+                        print(f"Error updating goal status in database: {e}")
+                
+                # Update our data
+                for goal in self.goals:
+                    if goal['id'] == goal_id:
+                        goal['completed'] = completed
+                        break
+                
+                # Emit signal
+                self.goalCompleted.emit(goal_id, completed)
+                
+                # If parent is completed, complete all children
+                if completed:
+                    self.updateChildrenStatus(item, Qt.CheckState.Checked)
+                    
+                # Check if this is a subgoal and determine what to do with the parent
+                parent_item = item.parent()
+                if parent_item:
+                    if completed:
+                        # If completed, check if all siblings are completed too
+                        self.checkParentIfAllChildrenCompleted(parent_item)
+                    else:
+                        # If unchecked, ensure parent is unchecked too
+                        self.uncheckParent(parent_item)
+                
+                # Unblock signals
+                self.goal_tree.blockSignals(False)
+                
+                # Refresh the entire tree for immediate visual update
+                self.refreshGoalTree()
+                
+                # Also update timeline if it's active
+                if self.tab_widget.currentIndex() == 1:
+                    self.timeline_widget.updateTimeline(self.goals)
+                    
+            except Exception as e:
+                # Re-enable signals in case of exception
+                self.goal_tree.blockSignals(False)
+                print(f"Error in handleItemStatusChanged: {e}")
+    
+    def uncheckParent(self, parent_item):
+        """Uncheck parent and propagate up the hierarchy when a child is unchecked."""
+        try:
+            # Only need to uncheck if parent is currently checked
+            if parent_item.checkState(4) == Qt.CheckState.Checked:
+                # Set parent to unchecked
+                parent_item.setCheckState(4, Qt.CheckState.Unchecked)
+                
+                # Update the parent goal in our data
+                parent_id = parent_item.data(0, Qt.ItemDataRole.UserRole)
+                for goal in self.goals:
+                    if goal['id'] == parent_id:
+                        goal['completed'] = False
+                        break
+                
+                # Update parent in database
+                if hasattr(self.parent, 'conn') and self.parent.conn:
+                    try:
+                        self.parent.cursor.execute("""
+                            UPDATE goals
+                            SET completed = 0
+                            WHERE id = ?
+                        """, (parent_id,))
+                        self.parent.conn.commit()
+                    except Exception as e:
+                        print(f"Error updating parent goal status in database: {e}")
+                
+                # Recursively uncheck grandparent if needed
+                grandparent_item = parent_item.parent()
+                if grandparent_item:
+                    self.uncheckParent(grandparent_item)
+        except Exception as e:
+            print(f"Error in uncheckParent: {e}")
+    
+    def checkParentIfAllChildrenCompleted(self, parent_item):
+        """Check parent item if all children are checked."""
+        try:
+            # Check if all children are completed
+            all_children_completed = True
+            for i in range(parent_item.childCount()):
+                if parent_item.child(i).checkState(4) != Qt.CheckState.Checked:
+                    all_children_completed = False
                     break
             
-            # Emit signal
-            self.goalCompleted.emit(goal_id, completed)
-            
-            # If parent is completed, complete all children
-            if completed:
-                self.updateChildrenStatus(item, Qt.CheckState.Checked)
+            # If all children are completed, check the parent
+            if all_children_completed:
+                parent_item.setCheckState(4, Qt.CheckState.Checked)
+                
+                # Update the parent goal in our data
+                parent_id = parent_item.data(0, Qt.ItemDataRole.UserRole)
+                for goal in self.goals:
+                    if goal['id'] == parent_id:
+                        goal['completed'] = True
+                        break
+                
+                # Update parent in database
+                if hasattr(self.parent, 'conn') and self.parent.conn:
+                    try:
+                        self.parent.cursor.execute("""
+                            UPDATE goals
+                            SET completed = 1
+                            WHERE id = ?
+                        """, (parent_id,))
+                        self.parent.conn.commit()
+                    except Exception as e:
+                        print(f"Error updating parent goal status in database: {e}")
+                
+                # Recursively check grandparent if needed
+                grandparent_item = parent_item.parent()
+                if grandparent_item:
+                    self.checkParentIfAllChildrenCompleted(grandparent_item)
+        except Exception as e:
+            print(f"Error in checkParentIfAllChildrenCompleted: {e}")
     
     def updateChildrenStatus(self, parent_item, status):
         """Update the status of all children when parent status changes."""
-        for i in range(parent_item.childCount()):
-            child = parent_item.child(i)
-            child.setCheckState(3, status)
+        try:
+            # Collect all goal IDs to update
+            updated_goal_ids = []
             
-            # Update our data
-            goal_id = child.data(0, Qt.ItemDataRole.UserRole)
-            for goal in self.goals:
-                if goal['id'] == goal_id:
-                    goal['completed'] = (status == Qt.CheckState.Checked)
-                    break
+            def collectChildrenIds(item, child_ids):
+                try:
+                    for i in range(item.childCount()):
+                        child = item.child(i)
+                        child.setCheckState(4, status)
+                        
+                        # Get goal ID
+                        goal_id = child.data(0, Qt.ItemDataRole.UserRole)
+                        if goal_id:
+                            child_ids.append(goal_id)
+                        
+                        # Recurse for sub-goals
+                        if child.childCount() > 0:
+                            collectChildrenIds(child, child_ids)
+                except Exception as e:
+                    print(f"Error collecting child IDs: {e}")
+                
+            # Collect all goal IDs to update
+            collectChildrenIds(parent_item, updated_goal_ids)
             
-            # Emit signal
-            self.goalCompleted.emit(goal_id, status == Qt.CheckState.Checked)
+            if not updated_goal_ids:
+                return  # No children to update
             
-            # Recurse for sub-goals
-            if child.childCount() > 0:
-                self.updateChildrenStatus(child, status)
+            # Batch update goals in memory
+            completed_value = (status == Qt.CheckState.Checked)
+            for goal_id in updated_goal_ids:
+                for goal in self.goals:
+                    if goal['id'] == goal_id:
+                        goal['completed'] = completed_value
+                        # Emit signal
+                        self.goalCompleted.emit(goal_id, completed_value)
+                        break
+            
+            # Batch update database if connection exists
+            if updated_goal_ids and hasattr(self.parent, 'conn') and self.parent.conn:
+                try:
+                    # Use a parameterized query with multiple value sets
+                    completed_int = 1 if completed_value else 0
+                    for goal_id in updated_goal_ids:
+                        self.parent.cursor.execute("""
+                            UPDATE goals
+                            SET completed = ?
+                            WHERE id = ?
+                        """, (completed_int, goal_id))
+                    self.parent.conn.commit()
+                except Exception as e:
+                    print(f"Error batch updating goal statuses in database: {e}")
+        except Exception as e:
+            print(f"Error in updateChildrenStatus: {e}")
+    
+    def updateParentProgress(self, goal_id):
+        """Update the parent goal's progress when a subgoal status changes."""
+        # Find the goal
+        goal = None
+        for g in self.goals:
+            if g['id'] == goal_id:
+                goal = g
+                break
+        
+        if not goal or goal['parent_id'] is None:
+            return
+            
+        # Find the parent goal
+        parent_id = goal['parent_id']
+        parent_goal = None
+        for g in self.goals:
+            if g['id'] == parent_id:
+                parent_goal = g
+                break
+                
+        if not parent_goal:
+            return
+        
+        # Find parent item in the tree
+        parent_item = self.findParentItem(parent_id)
+        if parent_item:
+            # Recalculate parent progress
+            parent_progress = self.calculateGoalProgress(parent_goal)
+            parent_item.setText(3, f"{parent_progress}%")
+            
+            # Update color based on progress
+            if parent_progress < 30:
+                parent_item.setForeground(3, QColor("#EF4444"))  # Red for low progress
+            elif parent_progress < 70:
+                parent_item.setForeground(3, QColor("#F59E0B"))  # Orange/Yellow for medium progress
+            else:
+                parent_item.setForeground(3, QColor("#10B981"))  # Green for high progress
+            
+            # Recursively update grandparent if needed
+            self.updateParentProgress(parent_id)
     
     def showContextMenu(self, position):
         """Show a context menu for the selected goal."""
@@ -1255,48 +1674,159 @@ class GoalWidget(QWidget):
     
     def refreshGoalTree(self):
         """Refresh the entire goal tree."""
-        # Block signals temporarily while rebuilding the tree
-        self.goal_tree.blockSignals(True)
-        
-        # Clear existing items
-        self.goal_tree.clear()
-        
-        # Keep track of already added goals to prevent duplicates
-        added_goal_ids = set()
-        
-        # First add all root goals
-        root_goals = [g for g in self.goals if g['parent_id'] is None]
-        for goal in root_goals:
-            item = self.addGoalToTree(goal)
-            added_goal_ids.add(goal['id'])
+        try:
+            # Block signals temporarily while rebuilding the tree
+            self.goal_tree.blockSignals(True)
             
-            # Then add their sub-goals recursively (tracking added IDs)
-            self.addSubGoalsToTree(goal['id'], item, added_goal_ids)
-        
-        # Now add any remaining goals that haven't been added yet
-        # (in case of orphaned goals or circular references)
-        remaining_goals = [g for g in self.goals if g['id'] not in added_goal_ids]
-        if remaining_goals:
-            print(f"Warning: Found {len(remaining_goals)} goals with missing or circular parent references")
-            for goal in remaining_goals:
-                # Add as top level
-                item = self.addGoalToTree(goal)
-                added_goal_ids.add(goal['id'])
-        
-        # Expand all items
-        self.goal_tree.expandAll()
-        
-        # Unblock signals
-        self.goal_tree.blockSignals(False)
+            # Store current expanded state if needed
+            expanded_items = {}
+            selection = self.goal_tree.selectedItems()
+            selected_id = None
+            if selection:
+                selected_id = selection[0].data(0, Qt.ItemDataRole.UserRole)
+            
+            # Clear existing items
+            self.goal_tree.clear()
+            
+            # Pre-calculate progress for all goals to avoid redundant calculations
+            goal_progress = {}
+            try:
+                for goal in self.goals:
+                    goal_progress[goal['id']] = self.calculateGoalProgress(goal)
+            except Exception as e:
+                print(f"Error calculating goal progress: {e}")
+            
+            # Keep track of already added goals to prevent duplicates
+            added_goal_ids = set()
+            
+            # First add all root goals
+            root_goals = [g for g in self.goals if g['parent_id'] is None]
+            for goal in root_goals:
+                try:
+                    item = self.addGoalToTreeOptimized(goal, None, goal_progress)
+                    added_goal_ids.add(goal['id'])
+                    
+                    # Then add their sub-goals recursively (tracking added IDs)
+                    self.addSubGoalsToTreeOptimized(goal['id'], item, added_goal_ids, goal_progress)
+                except Exception as e:
+                    print(f"Error adding root goal {goal['id']} to tree: {e}")
+            
+            # Now add any remaining goals that haven't been added yet
+            # (in case of orphaned goals or circular references)
+            remaining_goals = [g for g in self.goals if g['id'] not in added_goal_ids]
+            if remaining_goals:
+                print(f"Warning: Found {len(remaining_goals)} goals with missing or circular parent references")
+                for goal in remaining_goals:
+                    try:
+                        # Add as top level
+                        item = self.addGoalToTreeOptimized(goal, None, goal_progress)
+                        added_goal_ids.add(goal['id'])
+                    except Exception as e:
+                        print(f"Error adding orphaned goal {goal['id']} to tree: {e}")
+            
+            # Expand all items
+            self.goal_tree.expandAll()
+            
+            # Restore selection if applicable
+            if selected_id:
+                self.selectGoalItemById(selected_id)
+            
+            # Unblock signals
+            self.goal_tree.blockSignals(False)
+            
+        except Exception as e:
+            # Make sure signals are unblocked even if there's an error
+            self.goal_tree.blockSignals(False)
+            print(f"Error refreshing goal tree: {e}")
+            
+    def selectGoalItemById(self, goal_id):
+        """Find and select a goal item by ID."""
+        try:
+            # Search in all top-level items
+            for i in range(self.goal_tree.topLevelItemCount()):
+                top_item = self.goal_tree.topLevelItem(i)
+                if self.findAndSelectItem(top_item, goal_id):
+                    return True
+            return False
+        except Exception as e:
+            print(f"Error selecting goal item: {e}")
+            return False
+    
+    def findAndSelectItem(self, item, goal_id):
+        """Recursively search for and select an item by goal ID."""
+        try:
+            # Check if this is the item we're looking for
+            if item.data(0, Qt.ItemDataRole.UserRole) == goal_id:
+                self.goal_tree.setCurrentItem(item)
+                return True
+                
+            # Search children
+            for i in range(item.childCount()):
+                if self.findAndSelectItem(item.child(i), goal_id):
+                    return True
+                    
+            return False
+        except Exception as e:
+            print(f"Error finding item: {e}")
+            return False
 
-    def addSubGoalsToTree(self, parent_id, parent_item, added_goal_ids=None):
-        """Add sub-goals to the tree recursively.
+    def addGoalToTreeOptimized(self, goal, parent_item=None, goal_progress=None):
+        """Optimized version of addGoalToTree using pre-calculated progress."""
+        # Create a new tree item
+        item = QTreeWidgetItem()
+        item.setText(0, goal['title'])
+        item.setText(1, goal['due_date'])
+        item.setText(2, goal['due_time'])
+        item.setData(0, Qt.ItemDataRole.UserRole, goal['id'])
         
-        Args:
-            parent_id: ID of the parent goal
-            parent_item: QTreeWidgetItem of the parent
-            added_goal_ids: Set of goal IDs that have already been added (to avoid duplicates)
-        """
+        # Get progress percentage from pre-calculated dict or calculate it
+        if goal_progress and goal['id'] in goal_progress:
+            progress = goal_progress[goal['id']]
+        else:
+            progress = self.calculateGoalProgress(goal)
+            
+        progress_text = f"{progress}%"
+        item.setText(3, progress_text)
+        
+        # Set the status checkbox
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+        status = Qt.CheckState.Checked if goal['completed'] else Qt.CheckState.Unchecked
+        item.setCheckState(4, status)
+        
+        # Set progress text color based on percentage
+        if progress < 30:
+            item.setForeground(3, QColor("#EF4444"))  # Red for low progress
+        elif progress < 70:
+            item.setForeground(3, QColor("#F59E0B"))  # Orange/Yellow for medium progress
+        else:
+            item.setForeground(3, QColor("#10B981"))  # Green for high progress
+        
+        # Set priority color
+        if goal['priority'] == 0:  # Low
+            item.setBackground(0, QColor("#D1FAE5"))  # Light green
+        elif goal['priority'] == 1:  # Medium
+            item.setBackground(0, QColor("#FEF3C7"))  # Light yellow
+        else:  # High
+            item.setBackground(0, QColor("#FEE2E2"))  # Light red
+        
+        # Add to parent or root
+        if parent_item:
+            # If parent is provided, add as child of parent
+            parent_item.addChild(item)
+        else:
+            # No parent item provided, add at top level
+            self.goal_tree.addTopLevelItem(item)
+        
+        # Apply visual indication for a goal with subgoals
+        font = item.font(0)
+        if any(g['parent_id'] == goal['id'] for g in self.goals):
+            font.setBold(True)
+            item.setFont(0, font)
+        
+        return item
+        
+    def addSubGoalsToTreeOptimized(self, parent_id, parent_item, added_goal_ids=None, goal_progress=None):
+        """Optimized version of addSubGoalsToTree using pre-calculated progress."""
         # Initialize tracking set if not provided
         if added_goal_ids is None:
             added_goal_ids = set()
@@ -1314,12 +1844,12 @@ class GoalWidget(QWidget):
                 continue
             
             # Add the sub-goal as a child of the parent item
-            item = self.addGoalToTree(goal, parent_item)
+            item = self.addGoalToTreeOptimized(goal, parent_item, goal_progress)
             added_goal_ids.add(goal['id'])
             
             # Recursively add this goal's sub-goals
-            self.addSubGoalsToTree(goal['id'], item, added_goal_ids)
-    
+            self.addSubGoalsToTreeOptimized(goal['id'], item, added_goal_ids, goal_progress)
+            
     def loadGoals(self):
         """Load goals from the database."""
         if hasattr(self.parent, 'cursor') and self.parent.cursor:
@@ -1450,6 +1980,9 @@ class GoalWidget(QWidget):
         """Refresh the widget's data."""
         # Load all goals from the database
         self.loadGoals()
+        
+        # Make sure tree is expanded to show all items
+        self.goal_tree.expandAll()
         
         # If timeline tab is active, update the timeline view
         if self.tab_widget.currentIndex() == 1:
