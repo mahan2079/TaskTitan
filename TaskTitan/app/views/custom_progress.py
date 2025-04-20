@@ -1,6 +1,6 @@
 from PyQt6.QtCore import Qt, QRect
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush
+from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont
 
 class CircularProgressChart(QWidget):
     """A circular progress chart widget that displays percentage completion."""
@@ -14,28 +14,25 @@ class CircularProgressChart(QWidget):
         self.setMinimumSize(140, 180)
         self.setMaximumWidth(200)
         
-        # Create layout and add title and value labels
+        # Create layout and add title label
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        self.value_label = QLabel(f"{int(self.percentage)}%")
-        self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.value_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #4F46E5;")
-        
+        # We'll draw the percentage in the paintEvent, directly in the circle
+        # Instead, add the title label below the circle
         self.title_label = QLabel(self.title)
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title_label.setStyleSheet("font-size: 14px; color: #64748B;")
+        self.title_label.setWordWrap(True)
+        self.title_label.setStyleSheet("font-size: 14px; color: #64748B; margin-top: 5px;")
         
-        # Add spacer at top to position labels below the chart
-        layout.addSpacing(100)
-        layout.addWidget(self.value_label)
+        # Add spacer at top to position title label below the chart
+        layout.addSpacing(120)  # Space for the circle
         layout.addWidget(self.title_label)
         
     def updateValue(self, value):
         """Update the progress value and redraw."""
         self.value = value
         self.percentage = (value / self.max_value) * 100 if self.max_value > 0 else 0
-        self.value_label.setText(f"{int(self.percentage)}%")
         self.update()
         
     def paintEvent(self, event):
@@ -65,5 +62,21 @@ class CircularProgressChart(QWidget):
                 
             painter.setPen(QPen(color, 10, Qt.PenStyle.SolidLine))
             painter.drawArc(rect, 90 * 16, -span_angle)  # Start from top (90 degrees)
+        
+        # Draw percentage text in the middle of the circle
+        percentage_text = f"{int(self.percentage)}%"
+        painter.setFont(QFont("Arial", 18, QFont.Weight.Bold))
+        
+        # Set text color based on progress
+        if self.percentage < 30:
+            painter.setPen(QColor("#EF4444"))  # Red for low progress
+        elif self.percentage < 70:
+            painter.setPen(QColor("#F59E0B"))  # Orange/Yellow for medium progress
+        else:
+            painter.setPen(QColor("#10B981"))  # Green for high progress
+            
+        # Center the text in the circle
+        text_rect = rect
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, percentage_text)
         
         painter.end() 

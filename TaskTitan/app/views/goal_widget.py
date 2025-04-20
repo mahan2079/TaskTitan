@@ -1900,81 +1900,70 @@ class GoalWidget(QWidget):
     
     def addSampleGoals(self):
         """Add sample goals for testing."""
-        # Clear existing goals
-        self.goals = []
-        
-        # Today's date for sample goals
-        today = QDate.currentDate()
-        
-        # Generate sample goals
-        sample_goals = [
+        # Add sample goals
+        self.goals = [
             {
-                'id': 1001,
-                'title': "Complete Project Proposal",
+                'id': 1,
                 'parent_id': None,
-                'created_date': today.addDays(-10).toString("yyyy-MM-dd"),
-                'due_date': today.addDays(7).toString("yyyy-MM-dd"),
-                'due_time': "12:00",
-                'priority': 2,  # High
+                'title': 'Learn Python',
+                'created_date': '2023-01-01',
+                'due_date': '2023-12-31',
+                'due_time': '23:59',
+                'priority': 2,
                 'completed': False
             },
             {
-                'id': 1002,
-                'title': "Research Project Requirements",
-                'parent_id': 1001,
-                'created_date': today.addDays(-10).toString("yyyy-MM-dd"),
-                'due_date': today.addDays(-5).toString("yyyy-MM-dd"),
-                'due_time': "12:00",
-                'priority': 1,  # Medium
+                'id': 2,
+                'parent_id': 1,
+                'title': 'Complete Python Tutorial',
+                'created_date': '2023-01-15',
+                'due_date': '2023-06-30',
+                'due_time': '23:59',
+                'priority': 1,
                 'completed': True
             },
             {
-                'id': 1003,
-                'title': "Create Presentation",
-                'parent_id': 1001,
-                'created_date': today.addDays(-5).toString("yyyy-MM-dd"),
-                'due_date': today.addDays(5).toString("yyyy-MM-dd"),
-                'due_time': "12:00",
-                'priority': 1,  # Medium
-                'completed': False
-            },
-            {
-                'id': 1004,
-                'title': "Learn Python",
-                'parent_id': None,
-                'created_date': today.addDays(-20).toString("yyyy-MM-dd"),
-                'due_date': today.addDays(30).toString("yyyy-MM-dd"),
-                'due_time': "12:00",
-                'priority': 0,  # Low
-                'completed': False
-            },
-            {
-                'id': 1005,
-                'title': "Complete Online Course",
-                'parent_id': 1004,
-                'created_date': today.addDays(-20).toString("yyyy-MM-dd"),
-                'due_date': today.addDays(10).toString("yyyy-MM-dd"),
-                'due_time': "12:00",
-                'priority': 0,  # Low
-                'completed': False
-            },
-            {
-                'id': 1006,
-                'title': "Build Sample Project",
-                'parent_id': 1004,
-                'created_date': today.addDays(10).toString("yyyy-MM-dd"),
-                'due_date': today.addDays(25).toString("yyyy-MM-dd"),
-                'due_time': "12:00",
-                'priority': 0,  # Low
+                'id': 3,
+                'parent_id': 1,
+                'title': 'Build a Python Project',
+                'created_date': '2023-07-01',
+                'due_date': '2023-09-30',
+                'due_time': '23:59',
+                'priority': 1,
                 'completed': False
             }
         ]
         
-        # Add sample goals
-        self.goals.extend(sample_goals)
-        
-        # Refresh the tree
+        # Refresh the tree with these goals
         self.refreshGoalTree()
+        
+    def selectGoalById(self, goal_id):
+        """Find and select a goal by its ID in the goal tree.
+        
+        Args:
+            goal_id: The ID of the goal to select
+            
+        Returns:
+            bool: True if the goal was found and selected, False otherwise
+        """
+        # Switch to the tree tab first
+        self.tab_widget.setCurrentIndex(0)
+        
+        # Iterate through top-level items
+        for i in range(self.goal_tree.topLevelItemCount()):
+            top_item = self.goal_tree.topLevelItem(i)
+            item_id = top_item.data(0, Qt.ItemDataRole.UserRole)
+            
+            if item_id == goal_id:
+                self.goal_tree.setCurrentItem(top_item)
+                self.goal_tree.scrollToItem(top_item)
+                return True
+            
+            # Check children recursively
+            if self.findAndSelectItem(top_item, goal_id):
+                return True
+                
+        return False
     
     def refresh(self):
         """Refresh the widget's data."""

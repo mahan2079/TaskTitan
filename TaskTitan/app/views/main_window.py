@@ -253,104 +253,19 @@ class TaskTitanApp(QMainWindow):
         
         self.dashboard_calendar = ModernCalendarWidget()
         self.dashboard_calendar.clicked.connect(self.openDailyView)
-        self.dashboard_calendar.setMinimumHeight(300)  # Make calendar bigger
+        self.dashboard_calendar.setMinimumHeight(450)  # Make calendar much taller
         calendar_layout.addWidget(self.dashboard_calendar)
         
         # Add full-width calendar to layout
         dashboard_layout.addWidget(calendar_card)
         
-        # Main dashboard content - split into 2 columns
-        dashboard_content = QHBoxLayout()
-        
-        # Left column - Upcoming tasks and habits
-        left_column = QVBoxLayout()
-        
-        # Upcoming tasks
-        tasks_card = QFrame()
-        tasks_card.setProperty("class", "card")
-        tasks_layout = QVBoxLayout(tasks_card)
-        
-        tasks_header_layout = QHBoxLayout()
-        tasks_header = QLabel("Upcoming Tasks")
-        tasks_header.setProperty("class", "dashboard-widget-header")
-        tasks_header_layout.addWidget(tasks_header)
-        
-        view_all_tasks = QPushButton("View All")
-        view_all_tasks.setProperty("class", "secondary")
-        view_all_tasks.setFixedWidth(100)
-        view_all_tasks.clicked.connect(lambda: self.changePage(1))  # Go to Tasks page
-        tasks_header_layout.addWidget(view_all_tasks)
-        
-        tasks_layout.addLayout(tasks_header_layout)
-        
-        # Placeholder for task list - will be populated in loadData()
-        self.tasks_container = QVBoxLayout()
-        tasks_layout.addLayout(self.tasks_container)
-        
-        left_column.addWidget(tasks_card)
-        
-        # Today's habits
-        habits_card = QFrame()
-        habits_card.setProperty("class", "card")
-        habits_layout = QVBoxLayout(habits_card)
-        
-        habits_header_layout = QHBoxLayout()
-        habits_header = QLabel("Today's Habits")
-        habits_header.setProperty("class", "dashboard-widget-header")
-        habits_header_layout.addWidget(habits_header)
-        
-        view_all_habits = QPushButton("View All")
-        view_all_habits.setProperty("class", "secondary")
-        view_all_habits.setFixedWidth(100)
-        view_all_habits.clicked.connect(lambda: self.changePage(3))  # Go to Habits page
-        habits_header_layout.addWidget(view_all_habits)
-        
-        habits_layout.addLayout(habits_header_layout)
-        
-        # Placeholder for habits list - will be populated in loadData()
-        self.habits_container = QVBoxLayout()
-        habits_layout.addLayout(self.habits_container)
-        
-        left_column.addWidget(habits_card)
-        dashboard_content.addLayout(left_column, 1)
-        
-        # Right column - stats, goals
-        right_column = QVBoxLayout()
-        
-        # Goal Progress card - with circular progress charts 
-        stats_card = QFrame()
-        stats_card.setProperty("class", "card")
-        stats_layout = QVBoxLayout(stats_card)
-        
-        stats_header = QLabel("Goal Progress")
-        stats_header.setProperty("class", "dashboard-widget-header")
-        stats_layout.addWidget(stats_header)
-        
-        # Create circular progress widgets container
-        progress_container = QHBoxLayout()
-        
-        # We'll create a new custom circular progress chart for each metric
-        # These will be populated in loadStatistics()
-        self.task_completion_chart = CircularProgressChart("Task Completion", 0)
-        progress_container.addWidget(self.task_completion_chart)
-        
-        self.goal_progress_chart = CircularProgressChart("Goal Progress", 0)
-        progress_container.addWidget(self.goal_progress_chart)
-        
-        self.habit_streak_chart = CircularProgressChart("Habit Streak", 0, max_value=7)
-        progress_container.addWidget(self.habit_streak_chart)
-        
-        stats_layout.addLayout(progress_container)
-        
-        right_column.addWidget(stats_card)
-        
-        # Current goals widget
+        # Goal Progress Wheels Section
         goals_card = QFrame()
         goals_card.setProperty("class", "card")
         goals_layout = QVBoxLayout(goals_card)
         
         goals_header_layout = QHBoxLayout()
-        goals_header = QLabel("Current Goals")
+        goals_header = QLabel("Goal Progress")
         goals_header.setProperty("class", "dashboard-widget-header")
         goals_header_layout.addWidget(goals_header)
         
@@ -362,14 +277,16 @@ class TaskTitanApp(QMainWindow):
         
         goals_layout.addLayout(goals_header_layout)
         
-        # Placeholder for goals list - will be populated in loadData()
-        self.goals_container = QVBoxLayout()
-        goals_layout.addLayout(self.goals_container)
+        # Create a grid layout for the goal progress wheels
+        goals_grid = QGridLayout()
+        goals_grid.setSpacing(20)
         
-        right_column.addWidget(goals_card)
+        # We'll populate this grid with goal progress wheels in loadData()
+        self.goals_wheels_container = goals_grid
+        goals_layout.addLayout(goals_grid)
         
-        dashboard_content.addLayout(right_column, 1)
-        dashboard_layout.addLayout(dashboard_content)
+        # Add the goals card to the dashboard
+        dashboard_layout.addWidget(goals_card)
         
         # Set the scroll area's widget to the container
         scroll_area.setWidget(dashboard_container)
@@ -448,11 +365,8 @@ class TaskTitanApp(QMainWindow):
         # Load upcoming tasks
         self.loadUpcomingTasks()
         
-        # Load goals
-        self.loadGoals()
-        
-        # Load habits
-        self.loadHabits()
+        # Load dashboard goals with progress wheels
+        self.loadDashboardGoals()
         
         # Load statistics
         self.loadStatistics()
@@ -460,274 +374,251 @@ class TaskTitanApp(QMainWindow):
     def refreshData(self):
         """Refresh all data in the app."""
         # Clear existing data containers
-        self.clearLayout(self.tasks_container)
-        self.clearLayout(self.goals_container)
-        self.clearLayout(self.habits_container)
+        self.clearLayout(self.goals_wheels_container)
         
         # Reload data
         self.loadData()
         
-        # Also refresh the current view if not on dashboard
-        if self.current_page == 1:  # Tasks page
-            self.tasks_view.refresh()
-        elif self.current_page == 2:  # Goals page
-            self.goals_view.refresh()
-        elif self.current_page == 3:  # Habits page
-            self.habits_view.refresh()
-        elif self.current_page == 4:  # Productivity page
-            self.productivity_view.refresh()
-        elif self.current_page == 6:  # Weekly view
-            self.weekly_view.refresh()
-        elif self.current_page == 7:  # Daily view
-            self.daily_view.refresh()
-
     def loadUpcomingTasks(self):
         """Load upcoming tasks for the dashboard."""
-        # Get today's date and upcoming week
-        today = datetime.now().date()
-        end_date = today + timedelta(days=7)
-        
-        self.cursor.execute("""
-            SELECT id, title, due_date, due_time, completed 
-            FROM goals 
-            WHERE due_date BETWEEN ? AND ? 
-            ORDER BY due_date, due_time
-            LIMIT 5
-        """, (today.isoformat(), end_date.isoformat()))
-        
-        upcoming_tasks = self.cursor.fetchall()
-        
-        if upcoming_tasks:
-            for task in upcoming_tasks:
-                task_id, title, due_date, due_time, completed = task
-                
-                # Create a task card
-                task_frame = QFrame()
-                task_frame.setProperty("class", "task-card")
-                
-                # Calculate days until due
-                task_date = datetime.strptime(due_date, "%Y-%m-%d").date()
-                days_until = (task_date - today).days
-                
-                if days_until < 0:
-                    task_frame.setProperty("priority", "high")  # Overdue
-                elif days_until == 0:
-                    task_frame.setProperty("priority", "medium")  # Due today
-                elif days_until <= 2:
-                    task_frame.setProperty("priority", "medium")  # Soon
-                else:
-                    task_frame.setProperty("priority", "low")  # Future
-                
-                # Setup task layout
-                task_layout = QVBoxLayout(task_frame)
-                task_layout.setContentsMargins(10, 10, 10, 10)
-                
-                # Task title
-                task_title = QLabel(title)
-                task_title.setStyleSheet("font-weight: bold; font-size: 15px;")
-                task_layout.addWidget(task_title)
-                
-                # Due date/time
-                due_label = QLabel(f"Due: {due_date} at {due_time}")
-                due_label.setStyleSheet("color: #64748B; font-size: 13px;")
-                task_layout.addWidget(due_label)
-                
-                # Add to container
-                self.tasks_container.addWidget(task_frame)
-        else:
-            empty_label = QLabel("No upcoming tasks!")
-            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_label.setStyleSheet("color: #64748B; padding: 20px;")
-            self.tasks_container.addWidget(empty_label)
-        
-        # Add stretch at the end
-        self.tasks_container.addStretch()
+        # Since we've removed the tasks container, we'll skip loading upcoming tasks
+        pass
 
-    def loadGoals(self):
-        """Load current goals for the dashboard."""
-        self.cursor.execute("""
-            SELECT id, title, due_date, completed
-            FROM goals
-            WHERE completed = 0
-            ORDER BY due_date
-            LIMIT 3
-        """)
+    def loadDashboardGoals(self):
+        """Load goals and create progress wheel visualizations for them."""
+        try:
+            # Clear existing items in the goals container
+            self.clearLayout(self.goals_wheels_container)
+            
+            # First, get all parent goals (top-level goals)
+            self.cursor.execute("""
+                SELECT id, title, due_date, created_date, parent_id, completed, priority
+                FROM goals
+                WHERE parent_id IS NULL AND completed = 0
+                ORDER BY priority DESC, due_date ASC
+                LIMIT 10
+            """)
+            
+            parent_goals = self.cursor.fetchall()
+            
+            if not parent_goals:
+                # No goals found, add sample goals and reload
+                self.addSampleGoals()
+                
+                # Try fetching goals again
+                self.cursor.execute("""
+                    SELECT id, title, due_date, created_date, parent_id, completed, priority
+                    FROM goals
+                    WHERE parent_id IS NULL AND completed = 0
+                    ORDER BY priority DESC, due_date ASC
+                    LIMIT 10
+                """)
+                
+                parent_goals = self.cursor.fetchall()
+                
+                # If still no goals, show the message
+                if not parent_goals:
+                    empty_label = QLabel("No active goals found")
+                    empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    empty_label.setStyleSheet("color: #64748B; padding: 20px;")
+                    self.goals_wheels_container.addWidget(empty_label, 0, 0, 1, 3)
+                    return
+            
+            # Row counter for the grid layout
+            current_row = 0
+            
+            # Process each parent goal
+            for parent_goal in parent_goals:
+                parent_id, parent_title, parent_due_date, parent_created_date, _, parent_completed, parent_priority = parent_goal
+                
+                # Create section header for this parent goal
+                section_label = QLabel(parent_title)
+                section_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #1E293B; padding-top: 15px;")
+                self.goals_wheels_container.addWidget(section_label, current_row, 0, 1, 3)
+                current_row += 1
+                
+                # Parent goal as dictionary
+                parent_goal_dict = {
+                    'id': parent_id,
+                    'title': parent_title,
+                    'due_date': parent_due_date,
+                    'created_date': parent_created_date,
+                    'parent_id': None,
+                    'completed': parent_completed == 1,
+                    'priority': parent_priority
+                }
+                
+                # Calculate parent goal progress
+                parent_progress = self.calculateGoalProgress(parent_goal_dict)
+                
+                # Create parent goal chart - make it larger than subgoals
+                parent_chart = CircularProgressChart("Overall Progress", parent_progress)
+                parent_chart.setMinimumSize(160, 200)
+                parent_chart.mousePressEvent = lambda e, g_id=parent_id: self.openGoalDetails(g_id)
+                
+                # Add parent goal chart to first column of new row
+                self.goals_wheels_container.addWidget(parent_chart, current_row, 0)
+                
+                # Get subgoals for this parent
+                self.cursor.execute("""
+                    SELECT id, title, due_date, created_date, parent_id, completed
+                    FROM goals
+                    WHERE parent_id = ? AND completed = 0
+                    ORDER BY due_date ASC
+                    LIMIT 5
+                """, (parent_id,))
+                
+                subgoals = self.cursor.fetchall()
+                
+                # Column counter for subgoals in current row
+                col = 1
+                
+                # Process each subgoal
+                for subgoal in subgoals:
+                    subgoal_id, subgoal_title, subgoal_due_date, subgoal_created_date, subgoal_parent_id, subgoal_completed = subgoal
+                    
+                    # Convert to dictionary
+                    subgoal_dict = {
+                        'id': subgoal_id,
+                        'title': subgoal_title,
+                        'due_date': subgoal_due_date,
+                        'created_date': subgoal_created_date,
+                        'parent_id': subgoal_parent_id,
+                        'completed': subgoal_completed == 1
+                    }
+                    
+                    # Calculate progress
+                    subgoal_progress = self.calculateGoalProgress(subgoal_dict)
+                    
+                    # Create progress wheel
+                    subgoal_chart = CircularProgressChart(subgoal_title, subgoal_progress)
+                    subgoal_chart.mousePressEvent = lambda e, g_id=subgoal_id: self.openGoalDetails(g_id)
+                    
+                    # Add to grid - maximum 3 items per row (0, 1, 2)
+                    if col <= 2:
+                        self.goals_wheels_container.addWidget(subgoal_chart, current_row, col)
+                        col += 1
+                    else:
+                        # Start a new row
+                        current_row += 1
+                        col = 0
+                        self.goals_wheels_container.addWidget(subgoal_chart, current_row, col)
+                        col += 1
+                
+                # Move to next row for the next parent goal section
+                current_row += 1
+                
+                # Add a separator line
+                separator = QFrame()
+                separator.setFrameShape(QFrame.Shape.HLine)
+                separator.setFrameShadow(QFrame.Shadow.Sunken)
+                separator.setStyleSheet("background-color: #E2E8F0; margin: 10px 0;")
+                separator.setFixedHeight(1)
+                self.goals_wheels_container.addWidget(separator, current_row, 0, 1, 3)
+                current_row += 1
+                
+        except (sqlite3.Error, ValueError) as e:
+            print(f"Error loading dashboard goals: {e}")
+            # Show error message
+            error_label = QLabel("Error loading goals")
+            error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            error_label.setStyleSheet("color: #EF4444; padding: 20px;")
+            self.goals_wheels_container.addWidget(error_label, 0, 0, 1, 3)
+            
+    def calculateGoalProgress(self, goal):
+        """Calculate the progress percentage for a goal based on time.
         
-        goals = self.cursor.fetchall()
+        Args:
+            goal: The goal dictionary to calculate progress for
+            
+        Returns:
+            int: Progress percentage (0-100)
+        """
+        # If goal is completed, return 100%
+        if goal['completed']:
+            return 100
         
-        if goals:
-            for goal in goals:
-                goal_id, title, due_date, completed = goal
+        # Find all subgoals for this goal
+        try:
+            self.cursor.execute("""
+                SELECT id, due_date, created_date, completed
+                FROM goals
+                WHERE parent_id = ?
+            """, (goal['id'],))
+            
+            subgoals = self.cursor.fetchall()
+            
+            # If there are no subgoals, calculate progress based on time
+            if not subgoals:
+                return self.calculateTimeBasedProgress(goal)
+            
+            # If there are subgoals, calculate based on subgoal completion
+            total_count = len(subgoals)
+            completed_count = sum(1 for sg in subgoals if sg[3] == 1)
+            
+            if total_count > 0:
+                return int((completed_count / total_count) * 100)
+            else:
+                return self.calculateTimeBasedProgress(goal)
                 
-                # Create a goal card
-                goal_frame = QFrame()
-                goal_frame.setProperty("class", "goal-card")
-                
-                # Setup goal layout
-                goal_layout = QVBoxLayout(goal_frame)
-                goal_layout.setContentsMargins(10, 10, 10, 10)
-                
-                # Goal title
-                goal_title = QLabel(title)
-                goal_title.setStyleSheet("font-weight: bold; font-size: 15px;")
-                goal_layout.addWidget(goal_title)
-                
-                # Due date
-                due_label = QLabel(f"Target Date: {due_date}")
-                due_label.setStyleSheet("color: #64748B; font-size: 13px;")
-                goal_layout.addWidget(due_label)
-                
-                # Add to container
-                self.goals_container.addWidget(goal_frame)
-        else:
-            empty_label = QLabel("No active goals!")
-            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_label.setStyleSheet("color: #64748B; padding: 20px;")
-            self.goals_container.addWidget(empty_label)
+        except sqlite3.Error as e:
+            print(f"Error calculating goal progress: {e}")
+            return 0
+    
+    def calculateTimeBasedProgress(self, goal):
+        """Calculate progress based on time elapsed.
         
-        # Add stretch at the end
-        self.goals_container.addStretch()
-
-    def loadHabits(self):
-        """Load today's habits for the dashboard."""
-        today_weekday = datetime.now().strftime("%A")
-        
-        self.cursor.execute("""
-            SELECT id, name, time
-            FROM habits
-            WHERE days_of_week LIKE ?
-            ORDER BY time
-        """, (f"%{today_weekday}%",))
-        
-        habits = self.cursor.fetchall()
-        
-        if habits:
-            for habit in habits:
-                habit_id, name, time = habit
+        Args:
+            goal: The goal to calculate progress for
+            
+        Returns:
+            int: Progress percentage (0-100)
+        """
+        try:
+            # Get the start and due dates
+            if goal['created_date']:
+                start_date = datetime.strptime(goal['created_date'], "%Y-%m-%d").date()
+            else:
+                # Default to 2 weeks before due date
+                due_date = datetime.strptime(goal['due_date'], "%Y-%m-%d").date()
+                start_date = due_date - timedelta(days=14)
+            
+            due_date = datetime.strptime(goal['due_date'], "%Y-%m-%d").date()
+            today = datetime.now().date()
+            
+            # Calculate total duration and elapsed duration
+            total_days = (due_date - start_date).days
+            if total_days <= 0:  # Guard against invalid dates
+                return 0
                 
-                # Create a habit card
-                habit_frame = QFrame()
-                habit_frame.setProperty("class", "habit-card")
+            elapsed_days = (today - start_date).days
+            
+            # Calculate progress percentage
+            if elapsed_days < 0:  # Goal hasn't started yet
+                progress = 0
+            elif elapsed_days >= total_days:  # Goal is overdue
+                progress = 90  # Almost complete but not 100% until actually marked complete
+            else:
+                progress = (elapsed_days / total_days) * 100
                 
-                # Setup habit layout
-                habit_layout = QHBoxLayout(habit_frame)
-                habit_layout.setContentsMargins(10, 10, 10, 10)
-                
-                # Habit info
-                habit_info = QLabel(f"{name} - {time}")
-                habit_info.setStyleSheet("font-weight: bold; font-size: 15px;")
-                habit_layout.addWidget(habit_info)
-                
-                # Add to container
-                self.habits_container.addWidget(habit_frame)
-        else:
-            empty_label = QLabel("No habits scheduled for today!")
-            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_label.setStyleSheet("color: #64748B; padding: 20px;")
-            self.habits_container.addWidget(empty_label)
+            return int(progress)
+        except (ValueError, TypeError):
+            # Return 0 if there are date parsing errors
+            return 0
+            
+    def openGoalDetails(self, goal_id):
+        """Open goal details in the goals view."""
+        # Switch to goals view
+        self.changePage(2)
         
-        # Add stretch at the end
-        self.habits_container.addStretch()
+        # Locate and select the goal in the goals view
+        if hasattr(self.goals_view, 'selectGoalById'):
+            self.goals_view.selectGoalById(goal_id)
 
     def loadStatistics(self):
-        """Load statistics for the dashboard."""
-        today = datetime.now().date().isoformat()
-        
-        # Task completion rate
-        self.cursor.execute("""
-            SELECT COUNT(*), SUM(completed)
-            FROM goals
-            WHERE due_date <= ?
-        """, (today,))
-        
-        result = self.cursor.fetchone()
-        if result and result[0] > 0:
-            task_count = result[0]
-            completed_count = result[1] or 0
-            completion_rate = int((completed_count / task_count) * 100)
-            self.task_completion_chart.updateValue(completion_rate)
-        else:
-            self.task_completion_chart.updateValue(0)
-        
-        # Habit streak
-        # This is a simplified calculation - in a real app you'd have a more sophisticated streak calculation
-        streak_days = 0
-        current_date = datetime.now().date()
-        
-        while streak_days < 30:  # Limit to checking the last 30 days
-            check_date = current_date - timedelta(days=streak_days)
-            weekday = check_date.strftime("%A")
-            
-            # Get habits for this weekday
-            self.cursor.execute("""
-                SELECT COUNT(*)
-                FROM habits
-                WHERE days_of_week LIKE ?
-            """, (f"%{weekday}%",))
-            
-            habit_count = self.cursor.fetchone()[0]
-            
-            if habit_count == 0:
-                # No habits scheduled for this day, so continue the streak
-                streak_days += 1
-                continue
-            
-            # Check if all habits for this day were completed
-            self.cursor.execute("""
-                SELECT COUNT(*)
-                FROM events
-                WHERE date = ? AND type = 'habit' AND completed = 1
-            """, (check_date.isoformat(),))
-            
-            completed_habit_count = self.cursor.fetchone()[0]
-            
-            if completed_habit_count >= habit_count:
-                # All habits completed for this day
-                streak_days += 1
-            else:
-                # Streak broken
-                break
-        
-        self.habit_streak_chart.updateValue(streak_days)
-        
-        # Focus time today
-        self.cursor.execute("""
-            SELECT SUM(duration_minutes)
-            FROM productivity_sessions
-            WHERE date = ?
-        """, (today,))
-        
-        result = self.cursor.fetchone()
-        if result and result[0]:
-            focus_minutes = result[0]
-            focus_hours = focus_minutes / 60.0
-            self.goal_progress_chart.updateValue(focus_hours)
-        else:
-            self.goal_progress_chart.updateValue(0)
-        
-        # Weekly goal progress - use safer query
-        try:
-            start_of_week = self.getStartOfWeek()
-            end_of_week = datetime.fromisoformat(start_of_week).date() + timedelta(days=6)
-            
-            # Query tasks between start and end of week
-            self.cursor.execute("""
-                SELECT COUNT(*), SUM(completed)
-                FROM weekly_tasks
-                WHERE date BETWEEN ? AND ?
-            """, (start_of_week, end_of_week.isoformat()))
-            
-            result = self.cursor.fetchone()
-            if result and result[0] > 0:
-                weekly_task_count = result[0]
-                weekly_completed_count = result[1] or 0
-                weekly_progress = int((weekly_completed_count / weekly_task_count) * 100)
-                self.goal_progress_chart.updateValue(weekly_progress)
-            else:
-                self.goal_progress_chart.updateValue(0)
-        except (sqlite3.Error, ValueError) as e:
-            print(f"Error loading weekly progress: {e}")
-            self.goal_progress_chart.updateValue(0)
+        """Load statistics for dashboard charts."""
+        # We've moved this functionality to loadDashboardGoals
+        pass
 
     def getStartOfWeek(self):
         """Get the start date of the current week (Monday)."""
@@ -804,5 +695,169 @@ class TaskTitanApp(QMainWindow):
     def logout(self):
         """Logout the current user."""
         # This would be implemented in a real application
-        pass 
+        pass
+
+    def addSampleGoals(self):
+        """Add sample goals to the database if none exist."""
+        try:
+            # Get current date
+            today = datetime.now().date()
+            
+            # Check if we already have goals
+            self.cursor.execute("SELECT COUNT(*) FROM goals")
+            count = self.cursor.fetchone()[0]
+            
+            if count > 0:
+                # We already have goals, don't add samples
+                return
+                
+            # Add sample parent goals with subgoals
+            sample_goals = [
+                # Parent goal 1: Learn Programming
+                {
+                    'title': 'Learn Programming',
+                    'created_date': (today - timedelta(days=30)).isoformat(),
+                    'due_date': (today + timedelta(days=150)).isoformat(),
+                    'due_time': '23:59',
+                    'priority': 2,  # High
+                    'completed': 0,
+                    'parent_id': None
+                },
+                # Parent goal 2: Get Fit
+                {
+                    'title': 'Get Fit',
+                    'created_date': (today - timedelta(days=15)).isoformat(),
+                    'due_date': (today + timedelta(days=90)).isoformat(),
+                    'due_time': '23:59',
+                    'priority': 1,  # Medium
+                    'completed': 0,
+                    'parent_id': None
+                },
+                # Parent goal 3: Read More Books
+                {
+                    'title': 'Read More Books',
+                    'created_date': (today - timedelta(days=10)).isoformat(),
+                    'due_date': (today + timedelta(days=120)).isoformat(),
+                    'due_time': '23:59',
+                    'priority': 0,  # Low
+                    'completed': 0,
+                    'parent_id': None
+                }
+            ]
+            
+            # Add parent goals first to get their IDs
+            parent_ids = {}
+            
+            for goal in sample_goals:
+                self.cursor.execute("""
+                    INSERT INTO goals (title, created_date, due_date, due_time, priority, completed, parent_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    goal['title'], 
+                    goal['created_date'], 
+                    goal['due_date'], 
+                    goal['due_time'],
+                    goal['priority'],
+                    goal['completed'],
+                    goal['parent_id']
+                ))
+                
+                # Store the ID for this parent goal
+                parent_ids[goal['title']] = self.cursor.lastrowid
+            
+            # Now add subgoals with references to parent goals
+            subgoals = [
+                # Subgoals for "Learn Programming"
+                {
+                    'title': 'Complete Python Course',
+                    'created_date': (today - timedelta(days=30)).isoformat(),
+                    'due_date': (today + timedelta(days=30)).isoformat(),
+                    'due_time': '23:59',
+                    'priority': 2,
+                    'completed': 0,
+                    'parent_id': parent_ids['Learn Programming']
+                },
+                {
+                    'title': 'Build a Web Application',
+                    'created_date': (today + timedelta(days=31)).isoformat(),
+                    'due_date': (today + timedelta(days=90)).isoformat(),
+                    'due_time': '23:59',
+                    'priority': 1,
+                    'completed': 0,
+                    'parent_id': parent_ids['Learn Programming']
+                },
+                {
+                    'title': 'Learn Machine Learning',
+                    'created_date': (today + timedelta(days=91)).isoformat(),
+                    'due_date': (today + timedelta(days=150)).isoformat(),
+                    'due_time': '23:59',
+                    'priority': 0,
+                    'completed': 0,
+                    'parent_id': parent_ids['Learn Programming']
+                },
+                
+                # Subgoals for "Get Fit"
+                {
+                    'title': 'Cardio 3x per week',
+                    'created_date': (today - timedelta(days=15)).isoformat(),
+                    'due_date': (today + timedelta(days=90)).isoformat(),
+                    'due_time': '23:59',
+                    'priority': 1,
+                    'completed': 0,
+                    'parent_id': parent_ids['Get Fit']
+                },
+                {
+                    'title': 'Strength Training 2x per week',
+                    'created_date': (today - timedelta(days=15)).isoformat(),
+                    'due_date': (today + timedelta(days=90)).isoformat(),
+                    'due_time': '23:59',
+                    'priority': 1,
+                    'completed': 0,
+                    'parent_id': parent_ids['Get Fit']
+                },
+                
+                # Subgoals for "Read More Books"
+                {
+                    'title': 'Fiction: 6 books',
+                    'created_date': (today - timedelta(days=10)).isoformat(),
+                    'due_date': (today + timedelta(days=120)).isoformat(),
+                    'due_time': '23:59',
+                    'priority': 0,
+                    'completed': 0,
+                    'parent_id': parent_ids['Read More Books']
+                },
+                {
+                    'title': 'Non-fiction: 6 books',
+                    'created_date': (today - timedelta(days=10)).isoformat(),
+                    'due_date': (today + timedelta(days=120)).isoformat(),
+                    'due_time': '23:59',
+                    'priority': 0,
+                    'completed': 0,
+                    'parent_id': parent_ids['Read More Books']
+                }
+            ]
+            
+            # Add all subgoals
+            for subgoal in subgoals:
+                self.cursor.execute("""
+                    INSERT INTO goals (title, created_date, due_date, due_time, priority, completed, parent_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    subgoal['title'], 
+                    subgoal['created_date'], 
+                    subgoal['due_date'], 
+                    subgoal['due_time'],
+                    subgoal['priority'],
+                    subgoal['completed'],
+                    subgoal['parent_id']
+                ))
+            
+            # Commit the transaction
+            self.conn.commit()
+            print("Added sample goals successfully!")
+            
+        except sqlite3.Error as e:
+            print(f"Error adding sample goals: {e}")
+            # Roll back any changes if something went wrong
+            self.conn.rollback() 
 
