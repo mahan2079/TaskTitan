@@ -2,7 +2,7 @@
 Daily planning view for TaskTitan.
 """
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PyQt6.QtCore import QDate
+from PyQt6.QtCore import QDate, Qt
 
 class DailyView(QWidget):
     """Widget for daily planning."""
@@ -50,3 +50,41 @@ class DailyView(QWidget):
         
         # In a full implementation, we would reload tasks and events for this date
         self.placeholder_label.setText(f"Daily plan for {day_str} - Under Construction") 
+
+    def onStatusChanged(self, item_id, is_completed):
+        """Handle when a task item's status changes."""
+        # Update the UI to reflect the status change
+        try:
+            # Find labels within the item widget
+            # Note: findChild returns a single object, so we need to use findChildren to get a list
+            labels = self.findChildren(QLabel, "", options=Qt.FindChildOption.FindChildrenRecursively)
+            
+            # Find the labels associated with this item
+            desc_label = None
+            for label in labels:
+                # Check if this label belongs to the item widget that emitted the signal
+                if label.parent() and hasattr(label.parent(), 'property'):
+                    item_widget_id = label.parent().property("item_id")
+                    if item_widget_id == item_id and not desc_label:
+                        desc_label = label
+                        break
+            
+            # Update the label style based on completion status
+            if desc_label:
+                if is_completed:
+                    desc_label.setStyleSheet("text-decoration: line-through; color: #9CA3AF;")
+                else:
+                    desc_label.setStyleSheet("")
+            
+            # Update the database
+            if hasattr(self, 'conn') and self.conn:
+                try:
+                    self.cursor.execute(
+                        "UPDATE events SET completed = ? WHERE id = ?", 
+                        (1 if is_completed else 0, item_id)
+                    )
+                    self.conn.commit()
+                except Exception as e:
+                    print(f"Error updating event status in database: {e}")
+        except Exception as e:
+            print(f"Error in onStatusChanged: {e}") 
