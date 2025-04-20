@@ -14,7 +14,7 @@ import pyqtgraph as pg
 import sqlite3
 
 from app.models.database import initialize_db
-from app.views.calendar_widget import ModernCalendarWidget
+from app.views.calendar_widget import ModernCalendarWidget, CalendarWithEventList
 from app.views.task_widget import TaskWidget
 from app.views.goal_widget import GoalWidget
 from app.views.habit_widget import HabitWidget
@@ -214,19 +214,43 @@ class TaskTitanApp(QMainWindow):
         
         # Create the container widget for the scrollable content
         dashboard_container = QWidget()
+        dashboard_container.setStyleSheet("""
+            background-color: #F8FAFC;
+            border-radius: 12px;
+        """)
         dashboard_layout = QVBoxLayout(dashboard_container)
         dashboard_layout.setContentsMargins(20, 20, 20, 20)
         dashboard_layout.setSpacing(20)
         
-        # Dashboard header
-        header_layout = QHBoxLayout()
+        # Dashboard header with gradient background
+        header_frame = QFrame()
+        header_frame.setStyleSheet("""
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6366F1, stop:1 #8B5CF6);
+            border-radius: 12px;
+            padding: 10px;
+        """)
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setContentsMargins(20, 15, 20, 15)
+        
         welcome_label = QLabel(f"Welcome back! Today is {datetime.now().strftime('%A, %B %d')}")
-        welcome_label.setStyleSheet("font-size: 22px; font-weight: bold; color: #1E293B;")
+        welcome_label.setStyleSheet("font-size: 22px; font-weight: bold; color: white;")
         header_layout.addWidget(welcome_label)
         
         # Add quick action buttons in header
         quick_task_btn = QPushButton("+ Quick Task")
-        quick_task_btn.setProperty("class", "accent")
+        quick_task_btn.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                color: #6366F1;
+                font-weight: bold;
+                padding: 8px 16px;
+                border-radius: 8px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #EEF2FF;
+            }
+        """)
         quick_task_btn.setFixedWidth(150)
         
         # Add icon from resources
@@ -238,39 +262,173 @@ class TaskTitanApp(QMainWindow):
         quick_task_btn.clicked.connect(self.addQuickTask)
         
         header_layout.addWidget(quick_task_btn)
-        header_layout.addStretch()
-        dashboard_layout.addLayout(header_layout)
+        dashboard_layout.addWidget(header_frame)
         
-        # Calendar widget card - full width, positioned at the top
+        # Calendar widget card with enhanced styling
         calendar_card = QFrame()
         calendar_card.setObjectName("calendar-card")
-        calendar_card.setProperty("class", "card")
+        calendar_card.setStyleSheet("""
+            QFrame#calendar-card {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                                             stop:0 #F8FAFC, 
+                                             stop:1 #FFFFFF);
+                border-radius: 16px;
+                border: 1px solid #E2E8F0;
+                padding: 15px;
+            }
+        """)
         calendar_layout = QVBoxLayout(calendar_card)
+        calendar_layout.setContentsMargins(15, 15, 15, 15)
         
-        calendar_header = QLabel("Calendar")
-        calendar_header.setProperty("class", "dashboard-widget-header")
-        calendar_layout.addWidget(calendar_header)
+        # Create fancy header for calendar
+        calendar_header_frame = QFrame()
+        calendar_header_frame.setStyleSheet("""
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                       stop:0 #6366F1, 
+                                       stop:1 #818CF8);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 10px;
+        """)
+        calendar_header_layout = QHBoxLayout(calendar_header_frame)
+        calendar_header_layout.setContentsMargins(10, 8, 10, 8)
         
-        self.dashboard_calendar = ModernCalendarWidget()
-        self.dashboard_calendar.clicked.connect(self.openDailyView)
-        self.dashboard_calendar.setMinimumHeight(450)  # Make calendar much taller
+        calendar_icon = QLabel()
+        calendar_pixmap = get_pixmap("calendar")
+        if not calendar_pixmap.isNull():
+            calendar_icon.setPixmap(calendar_pixmap.scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio))
+        calendar_header_layout.addWidget(calendar_icon)
+        
+        calendar_header = QLabel("Monthly Calendar")
+        calendar_header.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
+        calendar_header_layout.addWidget(calendar_header)
+        
+        # Add today's date to the header
+        today_label = QLabel(datetime.now().strftime("%B %Y"))
+        today_label.setStyleSheet("color: white; font-size: 14px;")
+        calendar_header_layout.addStretch()
+        calendar_header_layout.addWidget(today_label)
+        
+        calendar_layout.addWidget(calendar_header_frame)
+        
+        # Calendar widget with enhanced height
+        self.dashboard_calendar = CalendarWithEventList()
+        self.dashboard_calendar.calendar.clicked.connect(self.openDailyView)
         calendar_layout.addWidget(self.dashboard_calendar)
+        
+        # Add legend for calendar events
+        legend_frame = QFrame()
+        legend_frame.setStyleSheet("""
+            background-color: #F8FAFC;
+            border-radius: 8px;
+            border: 1px solid #E2E8F0;
+            padding: 8px;
+            margin-top: 10px;
+        """)
+        legend_layout = QHBoxLayout(legend_frame)
+        
+        # Current day legend
+        current_day_icon = QFrame()
+        current_day_icon.setFixedSize(16, 16)
+        current_day_icon.setStyleSheet("""
+            background-color: #6366F1;
+            border-radius: 4px;
+        """)
+        current_day_label = QLabel("Today")
+        current_day_label.setStyleSheet("color: #4B5563; font-size: 12px;")
+        legend_layout.addWidget(current_day_icon)
+        legend_layout.addWidget(current_day_label)
+        legend_layout.addSpacing(10)
+        
+        # Event legend
+        event_icon = QFrame()
+        event_icon.setFixedSize(16, 16)
+        event_icon.setStyleSheet("""
+            background-color: white;
+            border-radius: 8px;
+            border: 1px solid #E2E8F0;
+        """)
+        
+        # Add colored dots to the event icon
+        event_icon_layout = QHBoxLayout(event_icon)
+        event_icon_layout.setContentsMargins(2, 10, 2, 2)
+        event_icon_layout.setSpacing(2)
+        
+        for i in range(3):
+            dot = QFrame()
+            dot.setFixedSize(3, 3)
+            dot.setStyleSheet(f"""
+                background-color: {['#F87171', '#FBBF24', '#34D399'][i]};
+                border-radius: 1px;
+            """)
+            event_icon_layout.addWidget(dot)
+        
+        event_label = QLabel("Events")
+        event_label.setStyleSheet("color: #4B5563; font-size: 12px;")
+        legend_layout.addWidget(event_icon)
+        legend_layout.addWidget(event_label)
+        
+        legend_layout.addStretch()
+        
+        # Quick navigation button to go to today
+        today_btn = QPushButton("Go to Today")
+        today_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #EEF2FF;
+                color: #4F46E5;
+                font-weight: bold;
+                padding: 6px 12px;
+                border-radius: 6px;
+                border: 1px solid #C7D2FE;
+            }
+            QPushButton:hover {
+                background-color: #E0E7FF;
+            }
+        """)
+        today_btn.clicked.connect(lambda: self.dashboard_calendar.calendar.setSelectedDate(QDate.currentDate()))
+        legend_layout.addWidget(today_btn)
+        
+        calendar_layout.addWidget(legend_frame)
         
         # Add full-width calendar to layout
         dashboard_layout.addWidget(calendar_card)
         
-        # Goal Progress Wheels Section
+        # Goal Progress Wheels Section with enhanced styling
         goals_card = QFrame()
-        goals_card.setProperty("class", "card")
+        goals_card.setStyleSheet("""
+            background-color: white;
+            border-radius: 12px;
+            border: 1px solid #E2E8F0;
+            padding: 10px;
+        """)
         goals_layout = QVBoxLayout(goals_card)
         
         goals_header_layout = QHBoxLayout()
+        goals_icon = QLabel()
+        goals_pixmap = get_pixmap("goals")
+        if not goals_pixmap.isNull():
+            goals_icon.setPixmap(goals_pixmap.scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio))
+        goals_header_layout.addWidget(goals_icon)
+        
         goals_header = QLabel("Goal Progress")
-        goals_header.setProperty("class", "dashboard-widget-header")
+        goals_header.setStyleSheet("font-size: 18px; font-weight: bold; color: #1E293B;")
         goals_header_layout.addWidget(goals_header)
+        goals_header_layout.addStretch()
         
         view_all_goals = QPushButton("View All")
-        view_all_goals.setProperty("class", "secondary")
+        view_all_goals.setStyleSheet("""
+            QPushButton {
+                background-color: #EEF2FF;
+                color: #6366F1;
+                font-weight: bold;
+                padding: 6px 12px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #DBEAFE;
+            }
+        """)
         view_all_goals.setFixedWidth(100)
         view_all_goals.clicked.connect(lambda: self.changePage(2))  # Go to Goals page
         goals_header_layout.addWidget(view_all_goals)
@@ -378,7 +536,7 @@ class TaskTitanApp(QMainWindow):
         
         # Reload data
         self.loadData()
-        
+
     def loadUpcomingTasks(self):
         """Load upcoming tasks for the dashboard."""
         # Since we've removed the tasks container, we'll skip loading upcoming tasks
@@ -393,7 +551,7 @@ class TaskTitanApp(QMainWindow):
             # First, get all parent goals (top-level goals)
             self.cursor.execute("""
                 SELECT id, title, due_date, created_date, parent_id, completed, priority
-                FROM goals
+            FROM goals 
                 WHERE parent_id IS NULL AND completed = 0
                 ORDER BY priority DESC, due_date ASC
                 LIMIT 10
@@ -427,15 +585,80 @@ class TaskTitanApp(QMainWindow):
             # Row counter for the grid layout
             current_row = 0
             
+            # Define colors for different priority levels
+            priority_colors = {
+                0: "#10B981",  # Low - Green
+                1: "#6366F1",  # Medium - Purple
+                2: "#F97316"   # High - Orange
+            }
+            
             # Process each parent goal
             for parent_goal in parent_goals:
                 parent_id, parent_title, parent_due_date, parent_created_date, _, parent_completed, parent_priority = parent_goal
                 
-                # Create section header for this parent goal
+                # Get priority color
+                priority_color = priority_colors.get(parent_priority, "#6366F1")
+                
+                # Create colorful section header for this parent goal
+                header_frame = QFrame()
+                header_frame.setStyleSheet(f"""
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                              stop:0 {priority_color}, 
+                                              stop:1 {priority_color}88);
+                    border-radius: 8px;
+                    padding: 8px;
+                    margin-top: 10px;
+                """)
+                header_layout = QHBoxLayout(header_frame)
+                header_layout.setContentsMargins(10, 5, 10, 5)
+                
+                # Add priority indicator dot
+                priority_indicator = QLabel()
+                priority_indicator.setFixedSize(12, 12)
+                priority_indicator.setStyleSheet(f"""
+                    background-color: white;
+                    border-radius: 6px;
+                """)
+                header_layout.addWidget(priority_indicator)
+                
+                # Add goal title
                 section_label = QLabel(parent_title)
-                section_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #1E293B; padding-top: 15px;")
-                self.goals_wheels_container.addWidget(section_label, current_row, 0, 1, 3)
+                section_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+                header_layout.addWidget(section_label)
+                
+                # Add due date if it exists
+                if parent_due_date:
+                    due_date = datetime.strptime(parent_due_date, "%Y-%m-%d").date()
+                    today = datetime.now().date()
+                    days_remaining = (due_date - today).days
+                    
+                    if days_remaining > 0:
+                        due_label = QLabel(f"{days_remaining} days left")
+                    elif days_remaining == 0:
+                        due_label = QLabel("Due today!")
+                    else:
+                        due_label = QLabel(f"Overdue by {-days_remaining} days")
+                    
+                    due_label.setStyleSheet("color: white; font-size: 12px;")
+                    header_layout.addWidget(due_label)
+                
+                header_layout.addStretch()
+                
+                # Add the header to the grid
+                self.goals_wheels_container.addWidget(header_frame, current_row, 0, 1, 3)
                 current_row += 1
+                
+                # Create a frame for the wheels section with light background
+                wheels_frame = QFrame()
+                wheels_frame.setStyleSheet(f"""
+                    background-color: white;
+                    border-radius: 8px;
+                    border: 1px solid #E2E8F0;
+                    padding: 15px;
+                    margin-bottom: 5px;
+                """)
+                wheels_layout = QGridLayout(wheels_frame)
+                wheels_layout.setSpacing(20)
                 
                 # Parent goal as dictionary
                 parent_goal_dict = {
@@ -456,8 +679,8 @@ class TaskTitanApp(QMainWindow):
                 parent_chart.setMinimumSize(160, 200)
                 parent_chart.mousePressEvent = lambda e, g_id=parent_id: self.openGoalDetails(g_id)
                 
-                # Add parent goal chart to first column of new row
-                self.goals_wheels_container.addWidget(parent_chart, current_row, 0)
+                # Add parent goal chart to first column
+                wheels_layout.addWidget(parent_chart, 0, 0)
                 
                 # Get subgoals for this parent
                 self.cursor.execute("""
@@ -472,6 +695,7 @@ class TaskTitanApp(QMainWindow):
                 
                 # Column counter for subgoals in current row
                 col = 1
+                sub_row = 0
                 
                 # Process each subgoal
                 for subgoal in subgoals:
@@ -496,25 +720,23 @@ class TaskTitanApp(QMainWindow):
                     
                     # Add to grid - maximum 3 items per row (0, 1, 2)
                     if col <= 2:
-                        self.goals_wheels_container.addWidget(subgoal_chart, current_row, col)
+                        wheels_layout.addWidget(subgoal_chart, sub_row, col)
                         col += 1
-                    else:
+                else:
                         # Start a new row
-                        current_row += 1
-                        col = 0
-                        self.goals_wheels_container.addWidget(subgoal_chart, current_row, col)
+                        sub_row += 1
+                        col = 1
+                        wheels_layout.addWidget(subgoal_chart, sub_row, col)
                         col += 1
                 
-                # Move to next row for the next parent goal section
+                # Add the entire wheels frame to the main grid
+                self.goals_wheels_container.addWidget(wheels_frame, current_row, 0, 1, 3)
                 current_row += 1
                 
-                # Add a separator line
-                separator = QFrame()
-                separator.setFrameShape(QFrame.Shape.HLine)
-                separator.setFrameShadow(QFrame.Shadow.Sunken)
-                separator.setStyleSheet("background-color: #E2E8F0; margin: 10px 0;")
-                separator.setFixedHeight(1)
-                self.goals_wheels_container.addWidget(separator, current_row, 0, 1, 3)
+                # Add some space between goal sections
+                spacer = QWidget()
+                spacer.setFixedHeight(15)
+                self.goals_wheels_container.addWidget(spacer, current_row, 0, 1, 3)
                 current_row += 1
                 
         except (sqlite3.Error, ValueError) as e:
@@ -695,7 +917,7 @@ class TaskTitanApp(QMainWindow):
     def logout(self):
         """Logout the current user."""
         # This would be implemented in a real application
-        pass
+        pass 
 
     def addSampleGoals(self):
         """Add sample goals to the database if none exist."""
