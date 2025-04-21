@@ -758,13 +758,31 @@ class TimelineView(QGraphicsView):
         # Show menu and handle selection
         action = menu.exec(self.mapToGlobal(pos))
         
-        # Create activity at the clicked time
-        if action == add_task_action:
-            self.parent().addActivity('task', scene_pos.x(), scene_pos.y())
-        elif action == add_event_action:
-            self.parent().addActivity('event', scene_pos.x(), scene_pos.y())
-        elif action == add_habit_action:
-            self.parent().addActivity('habit', scene_pos.x(), scene_pos.y())
+        # Find the DailyView parent - might not be the direct parent
+        daily_view = None
+        parent = self.parent()
+        
+        # Walk up the parent chain until we find a DailyView
+        while parent:
+            if isinstance(parent, DailyView):
+                daily_view = parent
+                break
+            # Try to get the parent's parent
+            if hasattr(parent, 'parent'):
+                parent = parent.parent()
+            else:
+                break
+        
+        # Create activity at the clicked time if we found the DailyView
+        if daily_view:
+            if action == add_task_action:
+                daily_view.addActivity('task', scene_pos.x(), scene_pos.y())
+            elif action == add_event_action:
+                daily_view.addActivity('event', scene_pos.x(), scene_pos.y())
+            elif action == add_habit_action:
+                daily_view.addActivity('habit', scene_pos.x(), scene_pos.y())
+        else:
+            print("Error: Could not find DailyView parent to add activity")
     
     def mousePressEvent(self, event):
         """Handle mouse press event."""
@@ -922,10 +940,10 @@ class TimelineView(QGraphicsView):
                             parent.addActivity(activity_type, None, None, initial_data)
             
             # Clean up
-            if self.drag_rect_item:
-                self.scene.removeItem(self.drag_rect_item)
-                self.drag_rect_item = None
-            
+        if  self.drag_rect_item:
+            self.scene.removeItem(self.drag_rect_item)
+            self.drag_rect_item = None
+        
             self.drag_start_pos = None
             self.drag_current_pos = None
             self.is_dragging = False
