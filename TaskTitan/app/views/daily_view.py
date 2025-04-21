@@ -1,6 +1,8 @@
 """
 Daily planning view for TaskTitan with timeline visualization.
 """
+from __future__ import annotations
+
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                            QScrollArea, QFrame, QSplitter, QTabWidget, QListWidget, 
                            QListWidgetItem, QDialog, QLineEdit, QTimeEdit, QDateEdit,
@@ -8,7 +10,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBut
                            QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsTextItem,
                            QGraphicsItem, QSizePolicy, QApplication)
 from PyQt6.QtCore import Qt, QDate, QTime, QSize, pyqtSignal, QRectF, QMargins, QTimer
-from PyQt6.QtGui import QIcon, QColor, QBrush, QPen, QFont, QPainter
+from PyQt6.QtGui import QIcon, QColor, QBrush, QPen, QFont, QPainter, QCursor, QFontMetrics
 from datetime import datetime, timedelta
 import sqlite3
 
@@ -33,9 +35,6 @@ class ActivityTimelineItem(QGraphicsRectItem):
         
         # Set appearance based on activity type and completion
         self.setupAppearance()
-        
-        # Add text for the activity
-        self.setupText()
     
     def setupAppearance(self):
         """Configure the visual appearance of the activity box."""
@@ -67,54 +66,13 @@ class ActivityTimelineItem(QGraphicsRectItem):
         self.setBrush(brush)
         self.setPen(QPen(color.darker(120), 2))
         
+        # Store color for text contrast calculations
+        self.base_color = color
+        
         # Set rounded corners
         self.setData(0, "activity")
         self.setData(1, self.activity['id'])
         self.setData(2, activity_type)
-    
-    def setupText(self):
-        """Add text information to the activity box."""
-        text_item = QGraphicsTextItem(self)
-        
-        # Extract activity information
-        title = self.activity.get('title', 'Untitled')
-        activity_type = self.activity.get('type', '').capitalize()
-        category = self.activity.get('category', '')
-        description = self.activity.get('description', '')
-        start_time = self.activity.get('start_time')
-        end_time = self.activity.get('end_time')
-        
-        # Format time range if available
-        time_str = ""
-        if start_time and end_time:
-            start_str = start_time.toString("h:mm AP") if isinstance(start_time, QTime) else str(start_time)
-            end_str = end_time.toString("h:mm AP") if isinstance(end_time, QTime) else str(end_time)
-            time_str = f"{start_str} - {end_str}"
-        
-        # Create HTML formatted text
-        html = f"""
-            <div style="margin: 0; padding: 0;">
-                <div style="margin-bottom: 3px;">
-                    <span style="font-weight: bold; font-size: 13px;">{title}</span>
-                </div>
-                <div style="margin-bottom: 4px;">
-                    <span style="color: #4B5563; font-size: 11px;">{activity_type}</span>
-                    {f'<span style="color: #6B7280; font-size: 11px;"> • {category}</span>' if category else ''}
-                    {f'<span style="color: #6B7280; font-size: 11px;"> • {time_str}</span>' if time_str else ''}
-                </div>
-                {f'<div style="color: #374151; font-size: 12px;">{description}</div>' if description else ''}
-            </div>
-        """
-        
-        text_item.setHtml(html)
-        
-        # Position the text inside the rect with padding
-        text_item.setPos(10, 5)
-        text_item.setTextWidth(self.rect().width() - 20)
-        
-        # Adjust text color if completed
-        if self.activity.get('completed', False):
-            text_item.setDefaultTextColor(QColor(100, 100, 100))
     
     def paint(self, painter, option, widget):
         """Custom painting for the activity item."""
@@ -129,14 +87,196 @@ class ActivityTimelineItem(QGraphicsRectItem):
         painter.setBrush(self.brush())
         painter.drawRoundedRect(self.rect(), 8, 8)
         
-        # Draw a small status indicator for task completion if needed
-        if self.activity.get('type') == 'task':
-            completed = self.activity.get('completed', False)
-            status_rect = QRectF(self.rect().right() - 20, self.rect().top() + 5, 15, 15)
-            painter.setPen(QPen(Qt.PenStyle.NoPen))
+        # Extract activity information for displaying
+        title = self.activity.get('title', 'Untitled')
+        description = self.activity.get('description', '')
+        activity_type = self.activity.get('type', '').capitalize()
+        category = self.activity.get('category', '')
+        start_time = self.activity.get('start_time')
+        end_time = self.activity.get('end_time')
+        priority = self.activity.get('priority', 0)
+        is_completed = self.activity.get('completed', False)
+
+        # Format time range for display
+        time_str = ""
+        if start_time and end_time:
+            if isinstance(start_time, QTime):
+                start_str = start_time.toString("h:mm AP")
+            else:
+                start_str = str(start_time)
+                
+            if isinstance(end_time, QTime):
+                end_str = end_time.toString("h:mm AP")
+            else:
+                end_str = str(end_time)
+                
+            time_str = f"{start_str} - {end_str}"
+        
+        # Format priority text
+        priority_text = ""
+        if activity_type.lower() == 'task' and priority is not None:
+            priority_labels = ["Low", "Medium", "High"]
+            if 0 <= priority < len(priority_labels):
+                priority_text = f"{priority_labels[priority]} Priority"
+        
+        # Create formatted line of metadata
+        meta_parts = []
+        if activity_type:
+            meta_parts.append(activity_type)
+        if time_str:
+            meta_parts.append(time_str)
+        if priority_text:
+            meta_parts.append(priority_text)
+        if category:
+            meta_parts.append(category)
             
-            if completed:
+        meta_text = " • ".join(meta_parts)
+        
+        # Set up fonts
+        title_font = QFont("Arial", 10, QFont.Weight.Bold)
+        meta_font = QFont("Arial", 8)
+        desc_font = QFont("Arial", 9)
+        
+        # Calculate text layout positions
+        padding = 10
+        content_x = self.rect().left() + padding
+        content_width = self.rect().width() - (padding * 2)
+        
+        # Calculate text color based on background brightness
+        bg_color = self.brush().color()
+        brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
+        
+        # Use dark text on light backgrounds, light text on dark backgrounds
+        title_color = QColor(33, 33, 33) if brightness > 128 else QColor(240, 240, 240)
+        meta_color = QColor(75, 85, 99) if brightness > 128 else QColor(200, 200, 200)
+        desc_color = QColor(75, 85, 99) if brightness > 128 else QColor(200, 200, 200)
+        
+        # Draw title (bold)
+        painter.setFont(title_font)
+        painter.setPen(title_color)
+        title_rect = QRectF(
+            content_x, 
+            self.rect().top() + padding,
+            content_width, 
+            25
+        )
+        
+        # Add ellipsis if title too long
+        title_metrics = painter.fontMetrics()
+        if title_metrics.horizontalAdvance(title) > content_width:
+            title = title_metrics.elidedText(title, Qt.TextElideMode.ElideRight, content_width)
+            
+        painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, title)
+        
+        # Draw metadata line below title
+        painter.setFont(meta_font)
+        painter.setPen(meta_color)
+        meta_rect = QRectF(
+            content_x, 
+            title_rect.bottom(),
+            content_width, 
+            20
+        )
+        
+        # Simplify metadata if space is limited
+        if self.rect().width() < 120:
+            # For narrow columns, show minimal info
+            if activity_type and time_str:
+                meta_text = f"{activity_type}"
+            else:
+                meta_text = " • ".join(meta_parts[:1])  # Just the first item
+                
+        # Add ellipsis if metadata too long
+        meta_metrics = painter.fontMetrics()
+        if meta_metrics.horizontalAdvance(meta_text) > content_width:
+            meta_text = meta_metrics.elidedText(meta_text, Qt.TextElideMode.ElideRight, content_width)
+            
+        painter.drawText(meta_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, meta_text)
+        
+        # Draw description if available and there's enough height
+        if description and self.rect().height() > 60:
+            # Add separator line
+            separator_y = meta_rect.bottom() + 2
+            painter.setPen(QPen(QColor(200, 200, 200, 100), 1))  # Light gray with transparency
+            painter.drawLine(
+                content_x, separator_y,
+                content_x + content_width, separator_y
+            )
+            
+            # Draw description text
+            painter.setFont(desc_font)
+            painter.setPen(desc_color)
+            desc_rect = QRectF(
+                content_x, 
+                separator_y + 4,
+                content_width, 
+                self.rect().height() - separator_y - padding
+            )
+            
+            # If very limited space, skip description
+            if self.rect().height() < 80 or self.rect().width() < 100:
+                painter.restore()
+                return
+                
+            # Handle multiline description with eliding if too long
+            desc_metrics = painter.fontMetrics()
+            desc_height = desc_rect.height()
+            line_height = desc_metrics.height()
+            max_lines = int(desc_height / line_height)
+            
+            if max_lines > 0:
+                # Split description into words
+                words = description.split()
+                lines = []
+                current_line = ""
+                
+                # Build lines that fit within width
+                for word in words:
+                    test_line = current_line + " " + word if current_line else word
+                    if desc_metrics.horizontalAdvance(test_line) <= content_width:
+                        current_line = test_line
+                    else:
+                        lines.append(current_line)
+                        current_line = word
+                        # Check if we've reached max lines
+                        if len(lines) >= max_lines - 1:  # Save space for last line
+                            break
+                
+                # Add last line
+                if current_line:
+                    lines.append(current_line)
+                
+                # If we have more words but limited by max_lines, add ellipsis to last line
+                if len(lines) == max_lines and word != words[-1]:
+                    last_line = lines[-1]
+                    last_line = desc_metrics.elidedText(last_line + "...", Qt.TextElideMode.ElideRight, content_width)
+                    lines[-1] = last_line
+                
+                # Draw each line
+                for i, line in enumerate(lines):
+                    painter.drawText(
+                        QRectF(
+                            content_x,
+                            separator_y + 4 + (i * line_height),
+                            content_width,
+                            line_height
+                        ),
+                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+                        line
+                    )
+        
+        # Draw completion indicator for tasks
+        if activity_type.lower() == 'task':
+            status_rect = QRectF(
+                self.rect().right() - 25, 
+                self.rect().top() + padding, 
+                15, 
+                15
+            )
+            
+            if is_completed:
                 # Checkmark for completed
+                painter.setPen(QPen(Qt.PenStyle.NoPen))
                 painter.setBrush(QBrush(QColor("#34D399")))  # Green
                 painter.drawEllipse(status_rect)
                 
@@ -156,41 +296,15 @@ class ActivityTimelineItem(QGraphicsRectItem):
                 painter.setPen(QPen(QColor("#6B7280"), 1.5))
                 painter.drawEllipse(status_rect)
         
-        # Draw activity type indicator in the top-left corner
-        activity_type = self.activity.get('type', '').lower()
-        indicator_text = ""
-        
-        if activity_type == 'task':
-            indicator_text = "⚑"  # Flag symbol for tasks
-        elif activity_type == 'event':
-            indicator_text = "📅"  # Calendar symbol for events
-        elif activity_type == 'habit':
-            indicator_text = "↻"  # Recycle symbol for habits
-        
-        if indicator_text:
-            painter.setFont(QFont("Arial", 10))
-            painter.setPen(QPen(QColor("#374151")))
-            painter.drawText(QRectF(self.rect().left() + 5, self.rect().top() + 5, 20, 20), 
-                             Qt.AlignmentFlag.AlignCenter, indicator_text)
-        
-        # Restore the painter state
         painter.restore()
     
-    def hoverEnterEvent(self, event):
-        """Handle mouse hover enter event."""
-        # Create a glow effect
-        self.setPen(QPen(self.pen().color().lighter(120), 3))
-        super().hoverEnterEvent(event)
-    
-    def hoverLeaveEvent(self, event):
-        """Handle mouse hover leave event."""
-        # Remove the glow effect
-        self.setPen(QPen(self.pen().color().darker(100), 2))
-        super().hoverLeaveEvent(event)
-        
     def mouseDoubleClickEvent(self, event):
-        """Handle double-click event."""
-        # This could be used to show an edit dialog
+        """Handle double-click event to show activity details."""
+        parent_view = self.scene().views()[0]
+        
+        if hasattr(parent_view, 'parent') and parent_view.parent and hasattr(parent_view.parent, 'onActivityClicked'):
+            parent_view.parent.onActivityClicked(self.activity)
+        
         super().mouseDoubleClickEvent(event)
 
 class TimelineView(QGraphicsView):
@@ -215,6 +329,21 @@ class TimelineView(QGraphicsView):
         self.scene.setSceneRect(0, 0, TIMELINE_WIDTH, total_height)
         self.setScene(self.scene)
         
+        # Enable context menu policy
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.showTimelineContextMenu)
+        
+        # Track if user is dragging to create a new event
+        self.drag_start_pos = None
+        self.drag_current_pos = None
+        self.drag_rect_item = None
+        self.is_dragging = False
+        
+        # Hour guide lines and labels
+        self.hour_lines = []
+        self.hour_labels = []
+        self.half_hour_lines = []
+        
         # Setup initial view
         self.setupHourGuides()
         
@@ -225,11 +354,20 @@ class TimelineView(QGraphicsView):
         # Current time indicator items
         self.time_line = None
         self.time_dot = None
+        self.time_label = None
+        
+        # Activity items dictionary
+        self.activity_items = {}
         
         # Update current time indicator every minute
         self.time_timer = QTimer(self)
         self.time_timer.timeout.connect(self.updateCurrentTimeIndicator)
         self.time_timer.start(60000)  # Update every minute
+        
+        # Set up a timer to refresh activities every 5 seconds
+        self.activity_refresh_timer = QTimer(self)
+        self.activity_refresh_timer.timeout.connect(self.refreshActivityPositions)
+        self.activity_refresh_timer.start(5000)  # Refresh every 5 seconds
     
     def scrollToMorningHours(self):
         """Scroll to the morning hours (around 8 AM) after initialization."""
@@ -245,6 +383,9 @@ class TimelineView(QGraphicsView):
         if self.time_dot:
             self.scene.removeItem(self.time_dot)
             self.time_dot = None
+        if self.time_label:
+            self.scene.removeItem(self.time_label)
+            self.time_label = None
             
         # Add new indicator
         self.addCurrentTimeIndicator()
@@ -253,22 +394,29 @@ class TimelineView(QGraphicsView):
         """Add a horizontal line indicating the current time."""
         current_time = QTime.currentTime()
         try:
-            parent_widget = self.parent().parent()
-            is_today = QDate.currentDate() == parent_widget.current_date
+            parent_widget = self.parent()
+            if hasattr(parent_widget, 'current_date'):
+                is_today = QDate.currentDate() == parent_widget.current_date
+            else:
+                is_today = True  # Fallback
         except:
             is_today = QDate.currentDate() == QDate.currentDate()  # Fallback
             
         if is_today:
-            # Calculate position
-            minutes_since_start = current_time.hour() * 60 + current_time.minute()
+            # Calculate position with minute precision
+            hours = current_time.hour()
+            minutes = current_time.minute()
+            minutes_since_start = hours * 60 + minutes
             minutes_since_timeline_start = minutes_since_start - (TIMELINE_START_HOUR * 60)
             y_pos = (minutes_since_timeline_start / 60) * HOUR_HEIGHT
             
-            # Draw the time indicator line
+            # Draw the time indicator line with a red pen
+            pen = QPen(QColor("#EF4444"), 2)  # Red line
+            pen.setDashPattern([5, 3])  # Dashed line
             self.time_line = self.scene.addLine(
                 TIMELINE_LEFT_MARGIN, y_pos,
                 TIMELINE_WIDTH, y_pos,
-                QPen(QColor("#EF4444"), 2)  # Red line
+                pen
             )
             
             # Add small circle at the start of the line
@@ -279,32 +427,123 @@ class TimelineView(QGraphicsView):
             )
             
             # Add time text
-            time_text = self.scene.addText(
-                current_time.toString("h:mm AP"),
-                QFont("Arial", 9, QFont.Weight.Bold)
-            )
-            time_text.setDefaultTextColor(QColor("#EF4444"))
-            time_text.setPos(TIMELINE_LEFT_MARGIN - 75, y_pos - 10)
+            time_text = current_time.toString("h:mm AP")
+            time_font = QFont("Arial", 9, QFont.Weight.Bold)
+            self.time_label = self.scene.addText(time_text, time_font)
+            self.time_label.setDefaultTextColor(QColor("#EF4444"))
+            text_width = QFontMetrics(time_font).horizontalAdvance(time_text)
+            self.time_label.setPos(TIMELINE_LEFT_MARGIN - 15 - text_width, y_pos - 9)
+            
+            # Ensure the time indicator is visible
+            self.ensureVisible(self.time_line, 50, 200)
     
+    def refreshActivityPositions(self):
+        """Refresh the positioning of activities to avoid overlaps."""
+        # Group activities by time overlap
+        overlap_groups = []
+        
+        # First pass: find all overlapping groups
+        for item_id, item in self.activity_items.items():
+            if item not in self.scene.items():
+                continue
+                
+            item_rect = item.rect()
+            item_y = item_rect.y()
+            item_height = item_rect.height()
+            item_bottom = item_y + item_height
+            
+            # Check which group this activity belongs to
+            found_group = False
+            for group in overlap_groups:
+                # Check if this item overlaps with any item in the group
+                overlaps_with_group = False
+                for group_item in group:
+                    group_rect = group_item.rect()
+                    group_y = group_rect.y()
+                    group_bottom = group_y + group_rect.height()
+                    
+                    if (item_y <= group_bottom and group_y <= item_bottom):
+                        overlaps_with_group = True
+                        break
+                
+                if overlaps_with_group:
+                    group.append(item)
+                    found_group = True
+                    break
+            
+            # If not in any group, create a new group
+            if not found_group:
+                overlap_groups.append([item])
+        
+        # Second pass: assign columns within each group
+        for group in overlap_groups:
+            if len(group) <= 1:
+                continue  # No need to adjust single items
+                
+            # Calculate available width
+            available_width = TIMELINE_WIDTH - TIMELINE_LEFT_MARGIN - 20
+            
+            # Determine number of columns needed (max 4 to avoid too narrow items)
+            columns = min(len(group), 4)
+            column_width = available_width / columns
+            
+            # Sort items by start time to ensure consistent ordering
+            group.sort(key=lambda x: x.rect().y())
+            
+            # Greedy column assignment
+            column_end_times = [0] * columns  # Track the end time of each column
+            
+            for item in group:
+                item_rect = item.rect()
+                item_y = item_rect.y()
+                item_height = item_rect.height()
+                item_bottom = item_y + item_height
+                
+                # Find the column with earliest end time
+                best_column = 0
+                for i in range(columns):
+                    if column_end_times[i] <= item_y:
+                        best_column = i
+                        break
+                    elif column_end_times[i] < column_end_times[best_column]:
+                        best_column = i
+                
+                # Update column end time
+                column_end_times[best_column] = item_bottom
+                
+                # Calculate new position for the item
+                x_pos = TIMELINE_LEFT_MARGIN + 10 + (best_column * column_width)
+                width = column_width - 10
+                
+                # Update item position and width
+                item.setRect(x_pos, item_rect.y(), width, item_rect.height())
+                item.column_index = best_column  # Store column for future reference
+
     def closeEvent(self, event):
         """Handle close event to stop timer."""
         self.time_timer.stop()
+        self.activity_refresh_timer.stop()
         super().closeEvent(event)
     
     def setupHourGuides(self):
         """Draw the hour lines and labels."""
         self.scene.clear()
+        self.hour_lines = []
+        self.hour_labels = []
+        self.half_hour_lines = []
+        self.activity_items = {}
         
         # Draw hour lines and labels
         for hour in range(TIMELINE_START_HOUR, TIMELINE_END_HOUR + 1):
             y_pos = (hour - TIMELINE_START_HOUR) * HOUR_HEIGHT
             
-            # Draw horizontal line
-            self.scene.addLine(
+            # Draw horizontal line for the hour
+            hour_line = self.scene.addLine(
                 TIMELINE_LEFT_MARGIN, y_pos,
                 TIMELINE_WIDTH, y_pos,
                 QPen(QColor("#E5E7EB"), 1)
             )
+            self.hour_lines.append(hour_line)
             
             # Format hour for 12-hour display with AM/PM
             if hour == 0:
@@ -319,20 +558,25 @@ class TimelineView(QGraphicsView):
             # Add hour label
             time_label = self.scene.addText(
                 hour_text,
-                QFont("Arial", 10)
+                QFont("Arial", 10, QFont.Weight.Bold)
             )
             time_label.setPos(5, y_pos - 10)
             time_label.setDefaultTextColor(QColor("#64748B"))
+            self.hour_labels.append(time_label)
             
-            # Add half-hour line (lighter)
-            if hour < TIMELINE_END_HOUR:
-                half_hour_y = y_pos + (HOUR_HEIGHT / 2)
-                self.scene.addLine(
-                    TIMELINE_LEFT_MARGIN, half_hour_y,
-                    TIMELINE_WIDTH, half_hour_y,
-                    QPen(QColor("#E5E7EB"), 0.5, Qt.PenStyle.DashLine)
+            # Add 15-minute marks
+            for minute in [15, 30, 45]:
+                minute_y = y_pos + (HOUR_HEIGHT * minute / 60)
+                line_style = Qt.PenStyle.DashLine if minute != 30 else Qt.PenStyle.DashDotLine
+                line_width = 0.5 if minute != 30 else 0.7
+                minute_line = self.scene.addLine(
+                    TIMELINE_LEFT_MARGIN, minute_y,
+                    TIMELINE_WIDTH, minute_y,
+                    QPen(QColor("#E5E7EB"), line_width, line_style)
                 )
-        
+                if minute == 30:
+                    self.half_hour_lines.append(minute_line)
+                
         # Draw vertical time axis line
         self.scene.addLine(
             TIMELINE_LEFT_MARGIN, 0,
@@ -352,10 +596,11 @@ class TimelineView(QGraphicsView):
         # Extract time information
         start_time = activity.get('start_time')
         end_time = activity.get('end_time')
+        activity_id = activity.get('id')
         
-        # Skip activities with no valid time
-        if not start_time or not end_time:
-            print(f"Skipping activity with missing time: {activity.get('title', 'Unknown')}")
+        # Skip activities with no valid time or ID
+        if not start_time or not end_time or activity_id is None:
+            print(f"Skipping activity with missing time or ID: {activity.get('title', 'Unknown')}")
             return
             
         # Make sure we have QTime objects
@@ -377,7 +622,7 @@ class TimelineView(QGraphicsView):
                 print(f"Error converting end time: {e}")
                 return
         
-        # Calculate position and size
+        # Calculate position with minute precision
         start_minutes = start_time.hour() * 60 + start_time.minute()
         end_minutes = end_time.hour() * 60 + end_time.minute()
         
@@ -387,7 +632,7 @@ class TimelineView(QGraphicsView):
             end_minutes = 24 * 60 - 1  # End at 23:59
             print(f"Activity spans to next day, capped at midnight: {activity.get('title')}")
         
-        # Calculate timeline coordinates
+        # Calculate timeline coordinates with minute precision
         start_minutes_on_timeline = start_minutes - (TIMELINE_START_HOUR * 60)
         end_minutes_on_timeline = end_minutes - (TIMELINE_START_HOUR * 60)
         
@@ -395,41 +640,297 @@ class TimelineView(QGraphicsView):
         y_pos = (start_minutes_on_timeline / 60) * HOUR_HEIGHT
         height = ((end_minutes_on_timeline - start_minutes_on_timeline) / 60) * HOUR_HEIGHT
         
-        # Ensure minimum height for visibility
+        # Ensure minimum height for visibility (30 pixels)
         height = max(height, 30)
         
-        print(f"Positioning activity {activity.get('title')} at y={y_pos}, height={height}")
+        # Calculate available width
+        available_width = TIMELINE_WIDTH - TIMELINE_LEFT_MARGIN - 20  # Leave some margin
+        
+        # Check for overlapping activities and organize them in columns
+        overlapping_items = []
+        column_assignments = {}  # To track which column each overlapping item is in
+        
+        # First pass: identify all overlapping activities
+        for item_id, item in self.activity_items.items():
+            if item_id != activity_id and item in self.scene.items():
+                item_rect = item.rect()
+                
+                # Check if the activity overlaps with this one
+                item_top = item_rect.y()
+                item_bottom = item_rect.y() + item_rect.height()
+                
+                # If there's any overlap in the vertical space
+                if (y_pos <= item_bottom and item_top <= y_pos + height):
+                    overlapping_items.append(item)
+                    # Remember existing column assignment
+                    if hasattr(item, 'column_index'):
+                        column_assignments[item] = item.column_index
+                    else:
+                        column_assignments[item] = 0  # Default
+        
+        # Second pass: determine best column for this activity
+        used_columns = set(column_assignments.values())
+        column_index = 0
+        max_columns = 4  # Limit number of columns to avoid too narrow activities
+        
+        # Find first available column
+        while column_index < max_columns and column_index in used_columns:
+            column_index += 1
+        
+        # If we're beyond max columns, reuse columns with fewest overlaps
+        if column_index >= max_columns:
+            column_counts = {}
+            for col in range(max_columns):
+                column_counts[col] = sum(1 for c in column_assignments.values() if c == col)
+            column_index = min(column_counts, key=column_counts.get)
+        
+        # Calculate total columns needed
+        columns = max(len(set(column_assignments.values())) + 1, column_index + 1)
+        columns = min(columns, max_columns)  # Enforce max columns limit
+        
+        # Calculate width for each column
+        column_width = available_width / columns
+        x_pos = TIMELINE_LEFT_MARGIN + 10 + (column_index * column_width)
+        width = column_width - 10  # Leave a small gap between columns
+        
+        print(f"Positioning activity {activity.get('title')}: start={start_time.toString()}, "
+              f"end={end_time.toString()}, y={y_pos}, h={height}, col={column_index}/{columns}")
         
         # Create the item and add to scene
         item = ActivityTimelineItem(
             activity,
-            TIMELINE_LEFT_MARGIN + 10,  # Add some padding from the axis
+            x_pos,
             y_pos,
-            TIMELINE_WIDTH - TIMELINE_LEFT_MARGIN - 30,  # Width with some margin
+            width,
             height,
             None
         )
+        item.column_index = column_index  # Store column index for future reference
         self.scene.addItem(item)
+        self.activity_items[activity_id] = item
+        
+        # Refresh positions to ensure proper layout
+        if overlapping_items and len(overlapping_items) > 2:
+            self.refreshActivityPositions()
     
     def clearActivities(self):
         """Remove all activities from the timeline."""
-        for item in self.scene.items():
-            if isinstance(item, ActivityTimelineItem):
+        for item_id, item in list(self.activity_items.items()):
+            if item in self.scene.items():
                 self.scene.removeItem(item)
+        self.activity_items.clear()
+    
+    def showTimelineContextMenu(self, pos):
+        """Show context menu at the specified position."""
+        scene_pos = self.mapToScene(pos)
+        
+        # Only show context menu in the activity area (right of the time axis)
+        if scene_pos.x() < TIMELINE_LEFT_MARGIN:
+            return
+        
+        # Calculate the time at the clicked position
+        y_pos = scene_pos.y()
+        minutes_on_timeline = (y_pos / HOUR_HEIGHT) * 60
+        minutes_since_start = minutes_on_timeline + (TIMELINE_START_HOUR * 60)
+        
+        # Convert to hours and minutes
+        hours = int(minutes_since_start / 60)
+        minutes = int(minutes_since_start % 60)
+        
+        # Round minutes to the nearest 5
+        minutes = round(minutes / 5) * 5
+        if minutes == 60:
+            hours += 1
+            minutes = 0
+            
+        # Create time string to show in the menu
+        clicked_time = QTime(hours, minutes)
+        time_str = clicked_time.toString("h:mm AP")
+        
+        menu = QMenu(self)
+        
+        # Add action to add different activity types
+        menu.addSection(f"At {time_str}")
+        add_task_action = menu.addAction("Add Task Here")
+        add_event_action = menu.addAction("Add Event Here")
+        add_habit_action = menu.addAction("Add Habit Here")
+        
+        # Show menu and handle selection
+        action = menu.exec(self.mapToGlobal(pos))
+        
+        # Create activity at the clicked time
+        if action == add_task_action:
+            self.parent().addActivity('task', scene_pos.x(), scene_pos.y())
+        elif action == add_event_action:
+            self.parent().addActivity('event', scene_pos.x(), scene_pos.y())
+        elif action == add_habit_action:
+            self.parent().addActivity('habit', scene_pos.x(), scene_pos.y())
     
     def mousePressEvent(self, event):
-        """Handle mouse press event to select activities."""
-        super().mousePressEvent(event)
-        item = self.itemAt(event.pos())
-        
-        if isinstance(item, ActivityTimelineItem) or (item and item.parentItem() and isinstance(item.parentItem(), ActivityTimelineItem)):
-            # If we clicked on a text item, get its parent
-            if item and not isinstance(item, ActivityTimelineItem):
-                item = item.parentItem()
+        """Handle mouse press event."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            scene_pos = self.mapToScene(event.pos())
             
-            # Emit signal with the activity data
-            if item and hasattr(item, 'activity'):
-                self.activityClicked.emit(item.activity)
+            # Only start drag in the activity area (right of the time axis)
+            if scene_pos.x() > TIMELINE_LEFT_MARGIN:
+                item = self.itemAt(event.pos())
+                
+                # If we clicked on an empty area, start dragging to create a new activity
+                if not item or (not isinstance(item, ActivityTimelineItem) and 
+                               (not item.parentItem() or not isinstance(item.parentItem(), ActivityTimelineItem))):
+                    self.drag_start_pos = scene_pos
+                    self.is_dragging = True
+                    
+                    # Create a temporary rectangle to show the dragging area
+                    self.drag_rect_item = self.scene.addRect(
+                        scene_pos.x(), scene_pos.y(), 10, 10,
+                        QPen(QColor("#6366F1"), 2, Qt.PenStyle.DashLine),
+                        QBrush(QColor(99, 102, 241, 50))  # Semi-transparent indigo
+                    )
+                    return
+                
+                # If we clicked on an activity, handle selection
+                if isinstance(item, ActivityTimelineItem) or (item and item.parentItem() and isinstance(item.parentItem(), ActivityTimelineItem)):
+                    # If we clicked on a text item, get its parent
+                    if item and not isinstance(item, ActivityTimelineItem):
+                        item = item.parentItem()
+                    
+                    # Emit signal with the activity data
+                    if item and hasattr(item, 'activity'):
+                        self.activityClicked.emit(item.activity)
+        
+        super().mousePressEvent(event)
+    
+    def mouseMoveEvent(self, event):
+        """Handle mouse move event."""
+        if self.is_dragging and self.drag_start_pos:
+            scene_pos = self.mapToScene(event.pos())
+            self.drag_current_pos = scene_pos
+            
+            # Update the drag rectangle
+            if self.drag_rect_item:
+                x = min(self.drag_start_pos.x(), scene_pos.x())
+                y = min(self.drag_start_pos.y(), scene_pos.y())
+                width = abs(scene_pos.x() - self.drag_start_pos.x())
+                height = abs(scene_pos.y() - self.drag_start_pos.y())
+                
+                # Ensure minimum dimensions
+                width = max(width, 100)
+                height = max(height, 30)
+                
+                self.drag_rect_item.setRect(x, y, width, height)
+            
+        super().mouseMoveEvent(event)
+    
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release event."""
+        if event.button() == Qt.MouseButton.LeftButton and self.is_dragging:
+            if self.drag_start_pos and self.drag_current_pos:
+                # Only create activity if drag was significant (not just a click)
+                distance = ((self.drag_current_pos.x() - self.drag_start_pos.x()) ** 2 + 
+                           (self.drag_current_pos.y() - self.drag_start_pos.y()) ** 2) ** 0.5
+                
+                if distance > 10:  # Minimum drag distance
+                    # Calculate the start and end times from the drag rectangle
+                    start_y = min(self.drag_start_pos.y(), self.drag_current_pos.y())
+                    end_y = max(self.drag_start_pos.y(), self.drag_current_pos.y())
+                    
+                    # Calculate minutes with precision
+                    start_minutes_on_timeline = (start_y / HOUR_HEIGHT) * 60
+                    start_minutes_since_start = start_minutes_on_timeline + (TIMELINE_START_HOUR * 60)
+                    
+                    end_minutes_on_timeline = (end_y / HOUR_HEIGHT) * 60
+                    end_minutes_since_start = end_minutes_on_timeline + (TIMELINE_START_HOUR * 60)
+                    
+                    # Convert to hours and minutes
+                    start_hour = int(start_minutes_since_start / 60)
+                    start_minute = int(start_minutes_since_start % 60)
+                    
+                    end_hour = int(end_minutes_since_start / 60)
+                    end_minute = int(end_minutes_since_start % 60)
+                    
+                    # Snap to nearest 5-minute interval
+                    start_minute = (start_minute // 5) * 5
+                    end_minute = ((end_minute + 4) // 5) * 5
+                    
+                    # Create QTime objects with bounds checking
+                    start_hour = min(23, max(0, start_hour))
+                    start_minute = min(59, max(0, start_minute))
+                    end_hour = min(23, max(0, end_hour))
+                    end_minute = min(59, max(0, end_minute))
+                    
+                    start_time = QTime(start_hour, start_minute)
+                    end_time = QTime(end_hour, end_minute)
+                    
+                    # Ensure end time is after start time
+                    if end_time <= start_time:
+                        end_time = start_time.addSecs(1800)  # Add 30 minutes
+                    
+                    # Get the current date from the DailyView parent
+                    # Find the DailyView parent - might not be the direct parent
+                    daily_view = None
+                    parent = self.parent()
+                    
+                    # Walk up the parent chain until we find a DailyView
+                    while parent:
+                        if isinstance(parent, DailyView):
+                            daily_view = parent
+                            break
+                        # Try to get the parent's parent
+                        if hasattr(parent, 'parent'):
+                            parent = parent.parent()
+                        else:
+                            break
+                    
+                    # Use the found DailyView or fallback to current date
+                    current_date = QDate.currentDate()
+                    if daily_view and hasattr(daily_view, 'current_date'):
+                        current_date = daily_view.current_date
+                    
+                    # Show dialog to create new event
+                    initial_data = {
+                        'date': current_date,
+                        'start_time': start_time,
+                        'end_time': end_time
+                    }
+                    
+                    # Ask what type of activity to create
+                    menu = QMenu()
+                    
+                    task_action = menu.addAction("Add Task")
+                    event_action = menu.addAction("Add Event")
+                    habit_action = menu.addAction("Add Habit")
+                    
+                    # Show menu at cursor position
+                    action = menu.exec(QCursor.pos())
+                    
+                    if action == task_action:
+                        activity_type = 'task'
+                    elif action == event_action:
+                        activity_type = 'event'
+                    elif action == habit_action:
+                        activity_type = 'habit'
+                    else:
+                        activity_type = None
+                    
+                    if activity_type and daily_view:
+                        daily_view.addActivity(activity_type, None, None, initial_data)
+                    elif activity_type:
+                        # Try to find another way to add the activity
+                        parent = self.parent()
+                        if parent and hasattr(parent, 'addActivity'):
+                            parent.addActivity(activity_type, None, None, initial_data)
+            
+            # Clean up
+            if self.drag_rect_item:
+                self.scene.removeItem(self.drag_rect_item)
+                self.drag_rect_item = None
+            
+            self.drag_start_pos = None
+            self.drag_current_pos = None
+            self.is_dragging = False
+        
+        super().mouseReleaseEvent(event)
     
     def wheelEvent(self, event):
         """Enhanced wheel event to support both vertical and horizontal scrolling."""
@@ -443,6 +944,9 @@ class TimelineView(QGraphicsView):
             # Otherwise, use normal scrolling
             super().wheelEvent(event)
 
+# Make sure DailyView is accessible for isinstance checks in TimelineView
+# This needs to be placed here before DailyView is used in any isinstance checks
+
 class DailyView(QWidget):
     """Widget for daily planning with timeline visualization."""
     
@@ -452,25 +956,34 @@ class DailyView(QWidget):
         
         # Initialize activities manager
         self.activities_manager = None
-        if parent and hasattr(parent, 'activities_manager'):
+        self.initializeActivitiesManager()
+        
+        self.current_date = QDate.currentDate()
+        self.setupUI()
+        
+        # Connect to the main application's signals if available
+        self.connectApplicationSignals()
+    
+    def initializeActivitiesManager(self):
+        """Initialize the activities manager with proper fallbacks."""
+        # Try different methods to get a valid activities manager
+        if self.parent and hasattr(self.parent, 'activities_manager'):
             # Direct connection to parent's activities manager
-            self.activities_manager = parent.activities_manager
+            self.activities_manager = self.parent.activities_manager
             print("Using parent's activities manager")
-        elif parent and hasattr(parent, 'conn') and parent.conn:
+        elif self.parent and hasattr(self.parent, 'conn') and self.parent.conn:
             # Create our own activities manager using parent's connection
-            self.activities_manager = ActivitiesManager(parent.conn, parent.cursor)
+            from app.models.activities_manager import ActivitiesManager
+            self.activities_manager = ActivitiesManager(self.parent.conn, self.parent.cursor)
             print("Created activities manager from parent's connection")
         else:
             # Try to access activities manager from main application if it exists
             try:
-                import sys
-                main_app = None
-                
                 # Look for the main application window in the application objects
+                from PyQt6.QtWidgets import QApplication
                 for widget in QApplication.topLevelWidgets():
                     if hasattr(widget, 'activities_manager'):
-                        main_app = widget
-                        self.activities_manager = main_app.activities_manager
+                        self.activities_manager = widget.activities_manager
                         print("Found activities manager from top-level application")
                         break
                 
@@ -478,6 +991,7 @@ class DailyView(QWidget):
                 if not self.activities_manager:
                     from app.models.database import initialize_db
                     conn, cursor = initialize_db()
+                    from app.models.activities_manager import ActivitiesManager
                     self.activities_manager = ActivitiesManager(conn, cursor)
                     self.activities_manager.create_tables()  # Ensure tables exist
                     print("Created standalone activities manager with new connection")
@@ -485,10 +999,49 @@ class DailyView(QWidget):
                 print(f"Could not initialize activities manager: {e}")
                 import traceback
                 traceback.print_exc()
-        
-        self.current_date = QDate.currentDate()
-        self.setupUI()
-        
+    
+    def connectApplicationSignals(self):
+        """Connect to signals from the main application to refresh data when changes occur."""
+        try:
+            # Try to connect to the main window's signals if available
+            main_app = None
+            
+            # First try parent
+            if self.parent and hasattr(self.parent, 'activityAdded'):
+                main_app = self.parent
+            else:
+                # Look for the main application window
+                from PyQt6.QtWidgets import QApplication
+                for widget in QApplication.topLevelWidgets():
+                    if hasattr(widget, 'activityAdded') and hasattr(widget, 'activityCompleted') and hasattr(widget, 'activityDeleted'):
+                        main_app = widget
+                        break
+            
+            if main_app:
+                # Connect to activity signals
+                main_app.activityAdded.connect(self.onActivityChanged)
+                main_app.activityCompleted.connect(self.onActivityChanged)
+                main_app.activityDeleted.connect(self.onActivityChanged)
+                print("Connected to main application signals for auto-refresh")
+            
+            # Also connect to the activities view directly if we can find it
+            if self.parent and hasattr(self.parent, 'activitiesView'):
+                activities_view = self.parent.activitiesView
+                if hasattr(activities_view, 'activityAdded'):
+                    activities_view.activityAdded.connect(self.onActivityChanged)
+                if hasattr(activities_view, 'activityCompleted'):
+                    activities_view.activityCompleted.connect(self.onActivityChanged)
+                if hasattr(activities_view, 'activityDeleted'):
+                    activities_view.activityDeleted.connect(self.onActivityChanged)
+                print("Connected to activities view signals for auto-refresh")
+        except Exception as e:
+            print(f"Could not connect to application signals: {e}")
+    
+    def onActivityChanged(self, *args):
+        """Handle activity changes from anywhere in the application."""
+        print("Activity changed signal received, refreshing daily view")
+        self.refresh()
+    
     def setupUI(self):
         """Set up the UI components."""
         main_layout = QVBoxLayout(self)
@@ -654,8 +1207,11 @@ class DailyView(QWidget):
         
         if not self.activities_manager:
             print("No activities manager available - cannot load activities")
-            return
-        
+            # Try to re-initialize the activities manager as a last resort
+            self.initializeActivitiesManager()
+            if not self.activities_manager:
+                return
+            
         try:
             # Get activities for the current date
             print(f"Fetching activities for date: {self.current_date.toString('yyyy-MM-dd')}")
@@ -666,7 +1222,13 @@ class DailyView(QWidget):
             else:
                 print(f"Found {len(activities)} activities for date {self.current_date.toString('yyyy-MM-dd')}")
                 for act in activities:
-                    print(f"  - {act.get('title')} ({act.get('type')}): {act.get('start_time').toString('HH:mm')} to {act.get('end_time').toString('HH:mm')}")
+                    print(f"  - {act.get('title')} ({act.get('type')}): " +
+                          f"{act.get('start_time').toString('HH:mm') if act.get('start_time') else 'No start time'} to " +
+                          f"{act.get('end_time').toString('HH:mm') if act.get('end_time') else 'No end time'}")
+                    
+                    # Print description for debugging
+                    if 'description' in act and act['description']:
+                        print(f"    Description: {act['description']}")
             
             # Add activities to the timeline
             for activity in activities:
@@ -773,19 +1335,22 @@ class DailyView(QWidget):
     
     def showAddActivityDialog(self):
         """Show dialog to add a new activity."""
-        if not self.parent:
-            return
-            
-        # If parent has an activities view with a dialog, use that
-        if hasattr(self.parent, 'activitiesView') and hasattr(self.parent.activitiesView, 'showAddActivityDialog'):
-            # Set the date first
-            self.parent.activitiesView.current_date = self.current_date
-            # Show the dialog
-            self.parent.activitiesView.showAddActivityDialog()
-            # Refresh the timeline after adding
-            self.loadTimelineData()
-        else:
-            QMessageBox.information(self, "Not Available", "Activity management is not available")
+        from PyQt6.QtWidgets import QMenu
+        
+        # Create a menu for activity types
+        menu = QMenu(self)
+        
+        task_action = menu.addAction("Add Task")
+        task_action.triggered.connect(lambda: self.addActivity('task'))
+        
+        event_action = menu.addAction("Add Event")
+        event_action.triggered.connect(lambda: self.addActivity('event'))
+        
+        habit_action = menu.addAction("Add Habit")
+        habit_action.triggered.connect(lambda: self.addActivity('habit'))
+        
+        # Show menu at cursor position
+        menu.exec(QCursor.pos())
     
     def showActivityContextMenu(self, position):
         """Show context menu for activities list."""
@@ -833,7 +1398,7 @@ class DailyView(QWidget):
     def editActivity(self, activity):
         """Show dialog to edit an activity."""
         if not self.parent:
-            return
+                return
             
         # If parent has an activities view with a dialog, use that
         if hasattr(self.parent, 'activitiesView') and hasattr(self.parent.activitiesView, 'showEditActivityDialog'):
@@ -847,7 +1412,7 @@ class DailyView(QWidget):
     def toggleActivityStatus(self, activity):
         """Toggle the completion status of an activity."""
         if not self.activities_manager:
-            return
+                    return
         
         try:
             # Toggle the status
@@ -869,7 +1434,7 @@ class DailyView(QWidget):
         
         # Confirm deletion
         confirm = QMessageBox.question(
-            self,
+            self, 
             "Confirm Deletion",
             f"Are you sure you want to delete '{activity['title']}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
@@ -908,10 +1473,159 @@ class DailyView(QWidget):
     
     def goToToday(self):
         """Go to today's date."""
-        self.setDate(QDate.currentDate())
+        self.setDate(QDate.currentDate()) 
     
     def refresh(self):
         """Refresh the view with current data."""
         print(f"Refreshing daily view for date: {self.current_date.toString('yyyy-MM-dd')}")
+        # Check if the activities manager is still valid
+        if not self.activities_manager:
+            self.initializeActivitiesManager()
+        
         self.loadTimelineData()
         self.loadNotes() 
+
+    def addActivity(self, activity_type, x=None, y=None, initial_data=None):
+        """Add a new activity.
+        
+        Args:
+            activity_type: Type of activity to add ('task', 'event', or 'habit')
+            x: X coordinate in the timeline (optional)
+            y: Y coordinate in the timeline (optional)
+            initial_data: Initial data to populate the dialog (optional)
+        """
+        if not initial_data:
+            initial_data = {'date': self.current_date}
+        
+        # If position is provided, calculate the time
+        if x is not None and y is not None and not initial_data.get('start_time'):
+            # Convert y position to time
+            hour = int(y / HOUR_HEIGHT) + TIMELINE_START_HOUR
+            minute = int((y % HOUR_HEIGHT) / HOUR_HEIGHT * 60)
+            
+            # Create QTime objects
+            start_time = QTime(hour, minute)
+            end_time = QTime(hour + 1, minute)  # Default to 1 hour duration
+            
+            # Add to initial data
+            initial_data['start_time'] = start_time
+            initial_data['end_time'] = end_time
+        
+        # If parent has an activities view with a dialog, use that
+        if self.parent and hasattr(self.parent, 'activitiesView') and hasattr(self.parent.activitiesView, 'showAddActivityDialog'):
+            # Pass the initial data to ensure correct date and times are used
+            self.parent.activitiesView.showAddActivityDialog(activity_type, initial_data)
+            # Refresh will happen via signals
+        else:
+            # Try to add directly using activities manager if available
+            if self.activities_manager:
+                try:
+                    self.showAddActivityDirectly(activity_type, initial_data)
+                except Exception as e:
+                    print(f"Error adding activity directly: {e}")
+                    QMessageBox.warning(self, "Error", f"Could not add activity: {str(e)}")
+            else:
+                QMessageBox.information(self, "Not Available", "Activity management is not available")
+    
+    def showAddActivityDirectly(self, activity_type, initial_data=None):
+        """Show a dialog to add an activity directly using this view."""
+        from PyQt6.QtWidgets import QDialog, QTimeEdit, QDateEdit, QDialogButtonBox
+        from PyQt6.QtWidgets import QFormLayout, QLineEdit, QTextEdit, QComboBox, QCheckBox
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Add {activity_type.capitalize()}")
+        
+        layout = QFormLayout(dialog)
+        
+        # Title field
+        title_edit = QLineEdit()
+        layout.addRow("Title:", title_edit)
+        
+        # Date field
+        date_edit = QDateEdit()
+        date_edit.setDate(initial_data.get('date', QDate.currentDate()))
+        date_edit.setCalendarPopup(True)
+        layout.addRow("Date:", date_edit)
+        
+        # Time fields
+        start_time_edit = QTimeEdit()
+        if 'start_time' in initial_data:
+            start_time_edit.setTime(initial_data['start_time'])
+        else:
+            start_time_edit.setTime(QTime.currentTime())
+        layout.addRow("Start Time:", start_time_edit)
+        
+        end_time_edit = QTimeEdit()
+        if 'end_time' in initial_data:
+            end_time_edit.setTime(initial_data['end_time'])
+        else:
+            end_time = QTime.currentTime().addSecs(3600)  # Add 1 hour
+            end_time_edit.setTime(end_time)
+        layout.addRow("End Time:", end_time_edit)
+        
+        # Description field
+        description_edit = QTextEdit()
+        description_edit.setPlaceholderText("Enter a description...")
+        layout.addRow("Description:", description_edit)
+        
+        # Category field
+        category_edit = QLineEdit()
+        layout.addRow("Category:", category_edit)
+        
+        # Priority for tasks
+        priority_combo = QComboBox()
+        priority_combo.addItems(["Low", "Medium", "High"])
+        priority_combo.setCurrentIndex(1)  # Medium by default
+        if activity_type == 'task':
+            layout.addRow("Priority:", priority_combo)
+        
+        # Days of week for habits
+        days_widget = QWidget()
+        days_layout = QHBoxLayout(days_widget)
+        day_checkboxes = []
+        
+        if activity_type == 'habit':
+            days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            for day in days:
+                checkbox = QCheckBox(day)
+                day_checkboxes.append(checkbox)
+                days_layout.addWidget(checkbox)
+            layout.addRow("Repeat on:", days_widget)
+        
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addRow(button_box)
+        
+        # Show dialog
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Collect data
+            activity_data = {
+                'title': title_edit.text(),
+                'date': date_edit.date(),
+                'start_time': start_time_edit.time(),
+                'end_time': end_time_edit.time(),
+                'description': description_edit.toPlainText(),
+                'category': category_edit.text(),
+                'type': activity_type,
+                'completed': False
+            }
+            
+            # Add type-specific data
+            if activity_type == 'task':
+                activity_data['priority'] = priority_combo.currentIndex()
+            elif activity_type == 'habit':
+                days_list = []
+                for i, day in enumerate(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]):
+                    if day_checkboxes[i].isChecked():
+                        days_list.append(day)
+                activity_data['days_of_week'] = ",".join(days_list)
+            
+            # Add to database
+            try:
+                self.activities_manager.add_activity(activity_data)
+                self.refresh()
+            except Exception as e:
+                print(f"Error adding activity: {e}")
+                QMessageBox.warning(self, "Error", f"Could not add activity: {str(e)}") 
