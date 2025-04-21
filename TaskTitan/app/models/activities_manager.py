@@ -109,7 +109,7 @@ class ActivitiesManager:
         self.cursor.execute("""
             SELECT 
                 id, title, date, start_time, end_time, completed, type,
-                priority, category, days_of_week, goal_id, created_at
+                priority, category, days_of_week, goal_id, created_at, color
             FROM activities
             WHERE date = ?
             ORDER BY start_time
@@ -121,7 +121,7 @@ class ActivitiesManager:
         self.cursor.execute("""
             SELECT 
                 id, title, date, start_time, end_time, completed, type,
-                priority, category, days_of_week, goal_id, created_at
+                priority, category, days_of_week, goal_id, created_at, color
             FROM activities
             WHERE 
                 type = 'habit' AND 
@@ -166,7 +166,7 @@ class ActivitiesManager:
         self.cursor.execute("""
             SELECT 
                 id, title, date, start_time, end_time, completed, type,
-                priority, category, days_of_week, goal_id, created_at
+                priority, category, days_of_week, goal_id, created_at, color
             FROM activities
             ORDER BY date, start_time
         """)
@@ -379,7 +379,7 @@ class ActivitiesManager:
         self.cursor.execute("""
             SELECT 
                 id, title, date, start_time, end_time, completed, type,
-                priority, category, days_of_week, goal_id, created_at
+                priority, category, days_of_week, goal_id, created_at, color
             FROM activities
             WHERE id = ?
         """, (activity_id,))
@@ -401,7 +401,7 @@ class ActivitiesManager:
         """
         # Expand row columns:
         # id, title, date, start_time, end_time, completed, type,
-        # priority, category, days_of_week, goal_id, created_at, [color]
+        # priority, category, days_of_week, goal_id, created_at, color
         result = {
             'id': row[0],
             'title': row[1],
@@ -416,9 +416,10 @@ class ActivitiesManager:
             'goal_id': row[10]
         }
         
-        # Add color information if available (index 12 might be color if it exists)
-        if len(row) > 12 and row[12] is not None:
+        # Get color data in index 12
+        if len(row) > 12 and row[12] is not None and row[12] != '':
             result['color'] = row[12]
+            print(f"Activity {row[0]} has color: {row[12]}")
         
         return result
     

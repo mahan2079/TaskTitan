@@ -8,9 +8,10 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBut
                            QListWidgetItem, QDialog, QLineEdit, QTimeEdit, QDateEdit,
                            QTextEdit, QCheckBox, QComboBox, QDialogButtonBox, QMessageBox, QMenu,
                            QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsTextItem,
-                           QGraphicsItem, QSizePolicy, QApplication)
+                           QGraphicsItem, QSizePolicy, QApplication, QGraphicsDropShadowEffect,
+                           QGraphicsLineItem, QGraphicsEllipseItem)
 from PyQt6.QtCore import Qt, QDate, QTime, QSize, pyqtSignal, QRectF, QMargins, QTimer
-from PyQt6.QtGui import QIcon, QColor, QBrush, QPen, QFont, QPainter, QCursor, QFontMetrics
+from PyQt6.QtGui import QIcon, QColor, QBrush, QPen, QFont, QPainter, QCursor, QFontMetrics, QLinearGradient
 from datetime import datetime, timedelta
 import sqlite3
 
@@ -18,11 +19,11 @@ from app.resources import get_icon
 from app.models.activities_manager import ActivitiesManager
 
 # Constants for timeline rendering
-HOUR_HEIGHT = 60  # Height in pixels for one hour
-TIMELINE_LEFT_MARGIN = 80  # Width of left margin for hour labels
-TIMELINE_WIDTH = 800  # Width of the timeline view
-TIMELINE_START_HOUR = 0  # Start at 12 AM (midnight)
-TIMELINE_END_HOUR = 23  # End at 11 PM
+HOUR_HEIGHT = 180  # Triple the height (was 60)
+TIMELINE_LEFT_MARGIN = 60
+TIMELINE_WIDTH = 1000
+TIMELINE_START_HOUR = 0
+TIMELINE_END_HOUR = 23
 
 class ActivityTimelineItem(QGraphicsRectItem):
     """Graphical representation of an activity in the timeline."""
@@ -43,31 +44,31 @@ class ActivityTimelineItem(QGraphicsRectItem):
         
         # Get activity color (or use default based on type)
         if 'color' in self.activity and self.activity['color']:
-            color = QColor(self.activity['color'])
+            # Use exact color from activity without any modification
+            base_color = QColor(self.activity['color'])
         else:
             # Default colors by activity type
             if activity_type == 'task':
-                color = QColor("#F87171")  # Red
+                base_color = QColor("#F87171")  # Red
             elif activity_type == 'event':
-                color = QColor("#818CF8")  # Purple/Blue
+                base_color = QColor("#818CF8")  # Purple/Blue
             elif activity_type == 'habit':
-                color = QColor("#34D399")  # Green
+                base_color = QColor("#34D399")  # Green
             else:
-                color = QColor("#6B7280")  # Gray
+                base_color = QColor("#6B7280")  # Gray
         
-        # Lighter color if completed
+        # Use pattern for completed activities but preserve the exact color
         if is_completed:
-            color = color.lighter(150)
-            brush = QBrush(color, Qt.BrushStyle.Dense4Pattern)
+            brush = QBrush(base_color, Qt.BrushStyle.Dense4Pattern)
         else:
-            brush = QBrush(color.lighter(130))
+            brush = QBrush(base_color)  # Use exact color, no lightening
         
-        # Set brush and pen
+        # Set brush and pen with exact color
         self.setBrush(brush)
-        self.setPen(QPen(color.darker(120), 2))
+        self.setPen(QPen(base_color, 2))
         
         # Store color for text contrast calculations
-        self.base_color = color
+        self.base_color = base_color
         
         # Set rounded corners
         self.setData(0, "activity")
@@ -75,228 +76,175 @@ class ActivityTimelineItem(QGraphicsRectItem):
         self.setData(2, activity_type)
     
     def paint(self, painter, option, widget):
-        """Custom painting for the activity item."""
-        # Set rendering hints for smoother appearance
+        """Paint the activity item with custom appearance."""
+        # Setup painter
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Save the painter state
-        painter.save()
+        # Draw the background
+        if self.isSelected():
+            painter.setBrush(QBrush(QColor(self.base_color).lighter(120)))
+        else:
+            painter.setBrush(QBrush(self.base_color))
         
-        # Draw a rounded rectangle
-        painter.setPen(self.pen())
-        painter.setBrush(self.brush())
-        painter.drawRoundedRect(self.rect(), 8, 8)
+        # No border for a cleaner look
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(self.rect(), 5, 5)
         
-        # Extract activity information for displaying
-        title = self.activity.get('title', 'Untitled')
-        description = self.activity.get('description', '')
-        activity_type = self.activity.get('type', '').capitalize()
-        category = self.activity.get('category', '')
-        start_time = self.activity.get('start_time')
-        end_time = self.activity.get('end_time')
-        priority = self.activity.get('priority', 0)
-        is_completed = self.activity.get('completed', False)
-
-        # Format time range for display
-        time_str = ""
-        if start_time and end_time:
-            if isinstance(start_time, QTime):
-                start_str = start_time.toString("h:mm AP")
-            else:
-                start_str = str(start_time)
-                
-            if isinstance(end_time, QTime):
-                end_str = end_time.toString("h:mm AP")
-            else:
-                end_str = str(end_time)
-                
-            time_str = f"{start_str} - {end_str}"
-        
-        # Format priority text
-        priority_text = ""
-        if activity_type.lower() == 'task' and priority is not None:
-            priority_labels = ["Low", "Medium", "High"]
-            if 0 <= priority < len(priority_labels):
-                priority_text = f"{priority_labels[priority]} Priority"
-        
-        # Create formatted line of metadata
-        meta_parts = []
-        if activity_type:
-            meta_parts.append(activity_type)
-        if time_str:
-            meta_parts.append(time_str)
-        if priority_text:
-            meta_parts.append(priority_text)
-        if category:
-            meta_parts.append(category)
+        # Draw completion indicator if applicable
+        if self.activity.get('completed', False):
+            checkmark_rect = QRectF(self.rect().right() - 20, self.rect().top() + 5, 15, 15)
+            painter.setBrush(QBrush(QColor("#FFFFFF")))
+            painter.drawEllipse(checkmark_rect)
             
-        meta_text = " • ".join(meta_parts)
+            # Draw checkmark
+            painter.setPen(QPen(QColor("#4CAF50"), 2))
+            painter.drawLine(
+                checkmark_rect.left() + 3, checkmark_rect.center().y(),
+                checkmark_rect.center().x(), checkmark_rect.bottom() - 3
+            )
+            painter.drawLine(
+                checkmark_rect.center().x(), checkmark_rect.bottom() - 3,
+                checkmark_rect.right() - 3, checkmark_rect.top() + 3
+            )
         
-        # Set up fonts
-        title_font = QFont("Arial", 10, QFont.Weight.Bold)
-        meta_font = QFont("Arial", 8)
-        desc_font = QFont("Arial", 9)
+        # Set text color based on background color brightness
+        background_color = QColor(self.base_color)
+        brightness = (background_color.red() * 299 + background_color.green() * 587 + background_color.blue() * 114) / 1000
+        if brightness > 128:
+            text_color = QColor("#333333")
+        else:
+            text_color = QColor("#FFFFFF")
         
-        # Calculate text layout positions
-        padding = 10
-        content_x = self.rect().left() + padding
-        content_width = self.rect().width() - (padding * 2)
-        
-        # Calculate text color based on background brightness
-        bg_color = self.brush().color()
-        brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
-        
-        # Use dark text on light backgrounds, light text on dark backgrounds
-        title_color = QColor(33, 33, 33) if brightness > 128 else QColor(240, 240, 240)
-        meta_color = QColor(75, 85, 99) if brightness > 128 else QColor(200, 200, 200)
-        desc_color = QColor(75, 85, 99) if brightness > 128 else QColor(200, 200, 200)
-        
-        # Draw title (bold)
+        # Draw title text
+        painter.setPen(QPen(text_color))
+        title_font = QFont()
+        title_font.setBold(True)
         painter.setFont(title_font)
-        painter.setPen(title_color)
-        title_rect = QRectF(
-            content_x, 
-            self.rect().top() + padding,
-            content_width, 
-            25
-        )
         
-        # Add ellipsis if title too long
-        title_metrics = painter.fontMetrics()
-        if title_metrics.horizontalAdvance(title) > content_width:
-            title = title_metrics.elidedText(title, Qt.TextElideMode.ElideRight, content_width)
-            
+        # Calculate text rectangles with proper margins
+        margin = 5
+        content_rect = self.rect().adjusted(margin, margin, -margin, -margin)
+        
+        # Draw title with text truncation if needed
+        title_rect = QRectF(content_rect.left(), content_rect.top(), 
+                           content_rect.width(), min(content_rect.height() / 2, 20))
+        
+        # Get the title and truncate if necessary
+        title = self.activity.get('title', 'Untitled')
+        font_metrics = QFontMetrics(title_font)
+        title_width = font_metrics.horizontalAdvance(title)
+        
+        if title_width > title_rect.width():
+            title = font_metrics.elidedText(title, Qt.TextElideMode.ElideRight, int(title_rect.width()))
+        
         painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, title)
         
-        # Draw metadata line below title
-        painter.setFont(meta_font)
-        painter.setPen(meta_color)
-        meta_rect = QRectF(
-            content_x, 
-            title_rect.bottom(),
-            content_width, 
-            20
-        )
+        # Draw time info
+        time_font = QFont()
+        time_font.setPointSize(8)
+        painter.setFont(time_font)
         
-        # Simplify metadata if space is limited
-        if self.rect().width() < 120:
-            # For narrow columns, show minimal info
-            if activity_type and time_str:
-                meta_text = f"{activity_type}"
+        # Use formatted time strings if available, otherwise fall back to basic formatting
+        start_time = self.activity.get('formatted_start_time', '')
+        end_time = self.activity.get('formatted_end_time', '')
+        
+        # If formatted times aren't available, try to format from the time objects
+        if not start_time and isinstance(self.activity.get('start_time'), QTime):
+            start_time = self.activity.get('start_time').toString("h:mm AP")
+        
+        if not end_time and isinstance(self.activity.get('end_time'), QTime):
+            end_time = self.activity.get('end_time').toString("h:mm AP")
+            
+        # Fallback to string representation but catch raw QTime objects
+        if not start_time and self.activity.get('start_time'):
+            start_time_obj = self.activity.get('start_time')
+            if "QTime" in str(start_time_obj):
+                if hasattr(start_time_obj, 'toString'):
+                    start_time = start_time_obj.toString("h:mm AP")
+                else:
+                    start_time = "Start time"
             else:
-                meta_text = " • ".join(meta_parts[:1])  # Just the first item
+                start_time = str(start_time_obj)
                 
-        # Add ellipsis if metadata too long
-        meta_metrics = painter.fontMetrics()
-        if meta_metrics.horizontalAdvance(meta_text) > content_width:
-            meta_text = meta_metrics.elidedText(meta_text, Qt.TextElideMode.ElideRight, content_width)
-            
-        painter.drawText(meta_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, meta_text)
+        if not end_time and self.activity.get('end_time'):
+            end_time_obj = self.activity.get('end_time')
+            if "QTime" in str(end_time_obj):
+                if hasattr(end_time_obj, 'toString'):
+                    end_time = end_time_obj.toString("h:mm AP")
+                else:
+                    end_time = "End time"
+            else:
+                end_time = str(end_time_obj)
         
-        # Draw description if available and there's enough height
-        if description and self.rect().height() > 60:
-            # Add separator line
-            separator_y = meta_rect.bottom() + 2
-            painter.setPen(QPen(QColor(200, 200, 200, 100), 1))  # Light gray with transparency
-            painter.drawLine(
-                content_x, separator_y,
-                content_x + content_width, separator_y
-            )
-            
-            # Draw description text
+        time_text = f"{start_time} - {end_time}" if start_time and end_time else start_time or end_time or ""
+        
+        time_rect = QRectF(content_rect.left(), title_rect.bottom(), 
+                          content_rect.width(), 15)
+        
+        # Truncate time text if necessary
+        font_metrics = QFontMetrics(time_font)
+        time_width = font_metrics.horizontalAdvance(time_text)
+        
+        if time_width > time_rect.width():
+            time_text = font_metrics.elidedText(time_text, Qt.TextElideMode.ElideRight, int(time_rect.width()))
+        
+        painter.drawText(time_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, time_text)
+        
+        # Draw description if available
+        description = self.activity.get('description', '')
+        if description and content_rect.height() > 50:  # Only if we have enough space
+            desc_font = QFont()
+            desc_font.setPointSize(8)
             painter.setFont(desc_font)
-            painter.setPen(desc_color)
-            desc_rect = QRectF(
-                content_x, 
-                separator_y + 4,
-                content_width, 
-                self.rect().height() - separator_y - padding
-            )
             
-            # If very limited space, skip description
-            if self.rect().height() < 80 or self.rect().width() < 100:
-                painter.restore()
-                return
-                
-            # Handle multiline description with eliding if too long
-            desc_metrics = painter.fontMetrics()
-            desc_height = desc_rect.height()
-            line_height = desc_metrics.height()
-            max_lines = int(desc_height / line_height)
+            desc_rect = QRectF(content_rect.left(), time_rect.bottom() + 5, 
+                              content_rect.width(), content_rect.bottom() - time_rect.bottom() - 5)
             
-            if max_lines > 0:
-                # Split description into words
-                words = description.split()
-                lines = []
-                current_line = ""
+            # Create a bounded text document to properly wrap and truncate text
+            font_metrics = QFontMetrics(desc_font)
+            available_lines = max(1, int((desc_rect.height() - 5) / font_metrics.height()))
+            
+            # Skip rendering if description is a QTime object 
+            if "QTime" in description:
+                description = ""
                 
-                # Build lines that fit within width
-                for word in words:
-                    test_line = current_line + " " + word if current_line else word
-                    if desc_metrics.horizontalAdvance(test_line) <= content_width:
-                        current_line = test_line
-                    else:
+            # Split description into words
+            words = description.split()
+            current_line = ""
+            lines = []
+            
+            # Group words into lines that fit within width
+            for word in words:
+                test_line = current_line + " " + word if current_line else word
+                if font_metrics.horizontalAdvance(test_line) <= desc_rect.width():
+                    current_line = test_line
+                else:
+                    if current_line:
                         lines.append(current_line)
-                        current_line = word
-                        # Check if we've reached max lines
-                        if len(lines) >= max_lines - 1:  # Save space for last line
-                            break
-                
-                # Add last line
-                if current_line:
-                    lines.append(current_line)
-                
-                # If we have more words but limited by max_lines, add ellipsis to last line
-                if len(lines) == max_lines and word != words[-1]:
-                    last_line = lines[-1]
-                    last_line = desc_metrics.elidedText(last_line + "...", Qt.TextElideMode.ElideRight, content_width)
-                    lines[-1] = last_line
-                
-                # Draw each line
-                for i, line in enumerate(lines):
-                    painter.drawText(
-                        QRectF(
-                            content_x,
-                            separator_y + 4 + (i * line_height),
-                            content_width,
-                            line_height
-                        ),
-                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-                        line
-                    )
-        
-        # Draw completion indicator for tasks
-        if activity_type.lower() == 'task':
-            status_rect = QRectF(
-                self.rect().right() - 25, 
-                self.rect().top() + padding, 
-                15, 
-                15
-            )
+                    current_line = word
+                    
+                    # Stop if we've reached the maximum number of lines
+                    if len(lines) >= available_lines - 1:  # -1 for current line
+                        break
             
-            if is_completed:
-                # Checkmark for completed
-                painter.setPen(QPen(Qt.PenStyle.NoPen))
-                painter.setBrush(QBrush(QColor("#34D399")))  # Green
-                painter.drawEllipse(status_rect)
+            # Add the last line
+            if current_line and len(lines) < available_lines:
+                lines.append(current_line)
                 
-                # Draw checkmark
-                painter.setPen(QPen(QColor("white"), 2))
-                painter.drawLine(
-                    status_rect.left() + 3, status_rect.center().y(),
-                    status_rect.center().x(), status_rect.bottom() - 3
-                )
-                painter.drawLine(
-                    status_rect.center().x(), status_rect.bottom() - 3,
-                    status_rect.right() - 3, status_rect.top() + 3
-                )
-            else:
-                # Empty circle for not completed
-                painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-                painter.setPen(QPen(QColor("#6B7280"), 1.5))
-                painter.drawEllipse(status_rect)
-        
-        painter.restore()
+            # Add ellipsis if we couldn't fit all text
+            if len(lines) < available_lines and len(words) > 0 and ' '.join(lines).count(' ') < description.count(' '):
+                if lines:
+                    lines[-1] = font_metrics.elidedText(lines[-1], Qt.TextElideMode.ElideRight, int(desc_rect.width()))
+                else:
+                    lines.append(font_metrics.elidedText(description, Qt.TextElideMode.ElideRight, int(desc_rect.width())))
+            
+            # Draw each line
+            for i, line in enumerate(lines):
+                if i >= available_lines:
+                    break
+                line_y = desc_rect.top() + i * font_metrics.height()
+                line_rect = QRectF(desc_rect.left(), line_y, desc_rect.width(), font_metrics.height())
+                painter.drawText(line_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, line)
     
     def mouseDoubleClickEvent(self, event):
         """Handle double-click event to show activity details."""
@@ -370,77 +318,85 @@ class TimelineView(QGraphicsView):
         self.activity_refresh_timer.start(5000)  # Refresh every 5 seconds
     
     def scrollToMorningHours(self):
-        """Scroll to the morning hours (around 8 AM) after initialization."""
-        morning_y_pos = (self.morning_hour - TIMELINE_START_HOUR) * HOUR_HEIGHT
-        self.verticalScrollBar().setValue(morning_y_pos - 100)  # Position with some space above
+        """Scroll to show the morning hours (8 AM) after initialization."""
+        # Calculate the position for 8 AM
+        morning_pos = 8 * HOUR_HEIGHT
+        # Set the scroll position to center on 8 AM
+        self.centerOn(TIMELINE_WIDTH / 2, morning_pos)
     
     def updateCurrentTimeIndicator(self):
-        """Update the current time indicator position."""
-        # Remove existing indicator
-        if self.time_line:
+        """Update the position of the current time indicator."""
+        if hasattr(self, 'time_line') and self.time_line is not None:
+            # Remove old time line
             self.scene.removeItem(self.time_line)
-            self.time_line = None
-        if self.time_dot:
             self.scene.removeItem(self.time_dot)
-            self.time_dot = None
-        if self.time_label:
-            self.scene.removeItem(self.time_label)
-            self.time_label = None
-            
-        # Add new indicator
+            self.scene.removeItem(self.time_text)
+        
+        # Add current time indicator
         self.addCurrentTimeIndicator()
     
     def addCurrentTimeIndicator(self):
-        """Add a horizontal line indicating the current time."""
+        """Add a visual indicator for the current time on the timeline."""
         current_time = QTime.currentTime()
-        try:
-            parent_widget = self.parent()
-            if hasattr(parent_widget, 'current_date'):
-                is_today = QDate.currentDate() == parent_widget.current_date
-            else:
-                is_today = True  # Fallback
-        except:
-            is_today = QDate.currentDate() == QDate.currentDate()  # Fallback
-            
-        if is_today:
-            # Calculate position with minute precision
-            hours = current_time.hour()
-            minutes = current_time.minute()
-            minutes_since_start = hours * 60 + minutes
-            minutes_since_timeline_start = minutes_since_start - (TIMELINE_START_HOUR * 60)
-            y_pos = (minutes_since_timeline_start / 60) * HOUR_HEIGHT
-            
-            # Draw the time indicator line with a red pen
-            pen = QPen(QColor("#EF4444"), 2)  # Red line
-            pen.setDashPattern([5, 3])  # Dashed line
-            self.time_line = self.scene.addLine(
-                TIMELINE_LEFT_MARGIN, y_pos,
-                TIMELINE_WIDTH, y_pos,
-                pen
-            )
-            
-            # Add small circle at the start of the line
-            self.time_dot = self.scene.addEllipse(
-                TIMELINE_LEFT_MARGIN - 4, y_pos - 4, 8, 8,
-                QPen(QColor("#EF4444")),
-                QBrush(QColor("#EF4444"))
-            )
-            
-            # Add time text
-            time_text = current_time.toString("h:mm AP")
-            time_font = QFont("Arial", 9, QFont.Weight.Bold)
-            self.time_label = self.scene.addText(time_text, time_font)
-            self.time_label.setDefaultTextColor(QColor("#EF4444"))
-            text_width = QFontMetrics(time_font).horizontalAdvance(time_text)
-            self.time_label.setPos(TIMELINE_LEFT_MARGIN - 15 - text_width, y_pos - 9)
-            
-            # Ensure the time indicator is visible
-            self.ensureVisible(self.time_line, 50, 200)
+        hour = current_time.hour()
+        minute = current_time.minute()
+        
+        # Calculate position based on time
+        y_position = (hour + minute / 60.0) * HOUR_HEIGHT
+        
+        # Create the gradient for the line
+        gradient = QLinearGradient(0, 0, TIMELINE_WIDTH, 0)
+        gradient.setColorAt(0.0, QColor(255, 0, 0, 200))  # Solid red at start
+        gradient.setColorAt(1.0, QColor(255, 0, 0, 30))   # Transparent red at end
+        
+        # Create the line
+        self.time_line = QGraphicsLineItem(0, y_position, TIMELINE_WIDTH, y_position)
+        pen = QPen(QBrush(gradient), 2)
+        self.time_line.setPen(pen)
+        self.scene.addItem(self.time_line)
+        
+        # Add a dot at the start of the line
+        self.time_dot = QGraphicsEllipseItem(-6, y_position - 6, 12, 12)
+        self.time_dot.setBrush(QBrush(QColor(255, 0, 0)))
+        self.time_dot.setPen(QPen(QColor(255, 255, 255), 1))
+        
+        # Add a glow effect to the dot
+        glow = QGraphicsDropShadowEffect()
+        glow.setColor(QColor(255, 0, 0, 150))
+        glow.setOffset(0, 0)
+        glow.setBlurRadius(10)
+        self.time_dot.setGraphicsEffect(glow)
+        
+        self.scene.addItem(self.time_dot)
+        
+        # Add current time text
+        time_string = current_time.toString("h:mm AP")
+        self.time_text = QGraphicsTextItem(time_string)
+        self.time_text.setDefaultTextColor(QColor(255, 0, 0))
+        
+        # Add a semi-transparent white background to the text for better visibility
+        rect = self.time_text.boundingRect()
+        bg_rect = QGraphicsRectItem(rect.adjusted(-4, -2, 4, 2))
+        bg_rect.setBrush(QBrush(QColor(255, 255, 255, 180)))
+        bg_rect.setPen(QPen(Qt.PenStyle.NoPen))
+        bg_rect.setParentItem(self.time_text)
+        
+        # Position the text to the right of the dot
+        self.time_text.setPos(15, y_position - 12)
+        self.scene.addItem(self.time_text)
+        
+        # Ensure the current time indicator is visible
+        self.ensureVisible(self.time_line, 50, 100)
     
     def refreshActivityPositions(self):
-        """Refresh the positioning of activities to avoid overlaps."""
+        """Refresh the positioning of activities to avoid overlaps while maintaining consistent widths."""
         # Group activities by time overlap
         overlap_groups = []
+        
+        # Available width for positioning - VERY WIDE, ALMOST FULL TIMELINE WIDTH
+        available_width = TIMELINE_WIDTH - TIMELINE_LEFT_MARGIN - 40
+        max_columns = 1  # Single column for maximum width
+        fixed_column_width = available_width
         
         # First pass: find all overlapping groups
         for item_id, item in self.activity_items.items():
@@ -475,49 +431,29 @@ class TimelineView(QGraphicsView):
             if not found_group:
                 overlap_groups.append([item])
         
-        # Second pass: assign columns within each group
+        # Second pass: reposition items while maintaining width
         for group in overlap_groups:
             if len(group) <= 1:
                 continue  # No need to adjust single items
                 
-            # Calculate available width
-            available_width = TIMELINE_WIDTH - TIMELINE_LEFT_MARGIN - 20
-            
-            # Determine number of columns needed (max 4 to avoid too narrow items)
-            columns = min(len(group), 4)
-            column_width = available_width / columns
+            # Single column layout
+            columns = 1  # Always use 1 column
             
             # Sort items by start time to ensure consistent ordering
             group.sort(key=lambda x: x.rect().y())
             
-            # Greedy column assignment
-            column_end_times = [0] * columns  # Track the end time of each column
+            # Fixed very wide item width with small margins
+            item_width = fixed_column_width - 20
             
             for item in group:
                 item_rect = item.rect()
-                item_y = item_rect.y()
-                item_height = item_rect.height()
-                item_bottom = item_y + item_height
                 
-                # Find the column with earliest end time
-                best_column = 0
-                for i in range(columns):
-                    if column_end_times[i] <= item_y:
-                        best_column = i
-                        break
-                    elif column_end_times[i] < column_end_times[best_column]:
-                        best_column = i
+                # Set X position with small margin on both sides
+                x_pos = TIMELINE_LEFT_MARGIN + 10
                 
-                # Update column end time
-                column_end_times[best_column] = item_bottom
-                
-                # Calculate new position for the item
-                x_pos = TIMELINE_LEFT_MARGIN + 10 + (best_column * column_width)
-                width = column_width - 10
-                
-                # Update item position and width
-                item.setRect(x_pos, item_rect.y(), width, item_rect.height())
-                item.column_index = best_column  # Store column for future reference
+                # Only update X position and width, keep Y position and height
+                item.setRect(x_pos, item_rect.y(), item_width, item_rect.height())
+                item.column_index = 0  # Always use column 0
 
     def closeEvent(self, event):
         """Handle close event to stop timer."""
@@ -526,192 +462,154 @@ class TimelineView(QGraphicsView):
         super().closeEvent(event)
     
     def setupHourGuides(self):
-        """Draw the hour lines and labels."""
-        self.scene.clear()
-        self.hour_lines = []
-        self.hour_labels = []
-        self.half_hour_lines = []
-        self.activity_items = {}
+        """Set up hour guide lines and labels for the timeline."""
+        # Remove any existing hour lines
+        for item in self.hour_lines:
+            self.scene.removeItem(item)
+        self.hour_lines.clear()
         
-        # Draw hour lines and labels
+        # Remove any existing hour labels
+        for item in self.hour_labels:
+            self.scene.removeItem(item)
+        self.hour_labels.clear()
+        
+        # Add new hour lines and labels
         for hour in range(TIMELINE_START_HOUR, TIMELINE_END_HOUR + 1):
-            y_pos = (hour - TIMELINE_START_HOUR) * HOUR_HEIGHT
+            # Calculate y position
+            y_pos = hour * HOUR_HEIGHT
             
-            # Draw horizontal line for the hour
-            hour_line = self.scene.addLine(
-                TIMELINE_LEFT_MARGIN, y_pos,
-                TIMELINE_WIDTH, y_pos,
-                QPen(QColor("#E5E7EB"), 1)
-            )
+            # Create hour line
+            hour_line = QGraphicsLineItem(0, y_pos, TIMELINE_WIDTH, y_pos)
+            hour_line.setPen(QPen(QColor("#E2E8F0"), 1))  # Light gray line
+            self.scene.addItem(hour_line)
             self.hour_lines.append(hour_line)
             
-            # Format hour for 12-hour display with AM/PM
+            # Format hour for AM/PM display
             if hour == 0:
-                hour_text = "12 AM"
+                hour_display = "12 AM"
             elif hour < 12:
-                hour_text = f"{hour} AM"
+                hour_display = f"{hour} AM"
             elif hour == 12:
-                hour_text = "12 PM"
+                hour_display = "12 PM"
             else:
-                hour_text = f"{hour-12} PM"
-                
-            # Add hour label
-            time_label = self.scene.addText(
-                hour_text,
-                QFont("Arial", 10, QFont.Weight.Bold)
-            )
-            time_label.setPos(5, y_pos - 10)
-            time_label.setDefaultTextColor(QColor("#64748B"))
-            self.hour_labels.append(time_label)
+                hour_display = f"{hour-12} PM"
             
-            # Add 15-minute marks
-            for minute in [15, 30, 45]:
-                minute_y = y_pos + (HOUR_HEIGHT * minute / 60)
-                line_style = Qt.PenStyle.DashLine if minute != 30 else Qt.PenStyle.DashDotLine
-                line_width = 0.5 if minute != 30 else 0.7
-                minute_line = self.scene.addLine(
-                    TIMELINE_LEFT_MARGIN, minute_y,
-                    TIMELINE_WIDTH, minute_y,
-                    QPen(QColor("#E5E7EB"), line_width, line_style)
-                )
-                if minute == 30:
-                    self.half_hour_lines.append(minute_line)
+            # Create hour label
+            hour_label = QGraphicsTextItem(hour_display)
+            hour_label.setDefaultTextColor(QColor("#64748B"))
+            hour_label.setPos(5, y_pos - 12)
+            self.scene.addItem(hour_label)
+            self.hour_labels.append(hour_label)
+            
+            # Add minor interval lines (every 20 minutes)
+            for minute in [20, 40]:
+                minor_y = y_pos + (minute / 60) * HOUR_HEIGHT
+                minor_line = QGraphicsLineItem(0, minor_y, TIMELINE_WIDTH, minor_y)
+                minor_line.setPen(QPen(QColor("#E2E8F0"), 0.5, Qt.PenStyle.DashLine))  # Lighter dashed line
+                self.scene.addItem(minor_line)
+                self.hour_lines.append(minor_line)  # Store in the same list for cleanup
                 
-        # Draw vertical time axis line
-        self.scene.addLine(
-            TIMELINE_LEFT_MARGIN, 0,
-            TIMELINE_LEFT_MARGIN, (TIMELINE_END_HOUR - TIMELINE_START_HOUR + 1) * HOUR_HEIGHT,
-            QPen(QColor("#94A3B8"), 1)
-        )
-        
-        # Add current time indicator
-        self.addCurrentTimeIndicator()
+                # Add minute label
+                minute_label = QGraphicsTextItem(f"{minute}")
+                minute_label.setDefaultTextColor(QColor("#94A3B8"))  # Lighter color for minutes
+                minute_label.setFont(QFont("Arial", 7))  # Smaller font
+                minute_label.setPos(30, minor_y - 10)
+                self.scene.addItem(minute_label)
+                self.hour_labels.append(minute_label)  # Store in the same list for cleanup
     
     def addActivity(self, activity):
-        """Add an activity to the timeline.
-        
-        Args:
-            activity: Dictionary containing activity data
-        """
-        # Extract time information
-        start_time = activity.get('start_time')
-        end_time = activity.get('end_time')
-        activity_id = activity.get('id')
-        
-        # Skip activities with no valid time or ID
-        if not start_time or not end_time or activity_id is None:
-            print(f"Skipping activity with missing time or ID: {activity.get('title', 'Unknown')}")
+        """Add an activity to the timeline."""
+        # Skip if missing required data
+        if (not activity.get('id') or
+            not activity.get('title') or
+            not activity.get('start_time')):
+            print(f"Warning: Activity missing required data: {activity}")
             return
-            
-        # Make sure we have QTime objects
-        if not isinstance(start_time, QTime):
+        
+        # Handle start time conversion
+        start_time = activity.get('start_time')
+        if isinstance(start_time, str):
             try:
-                if isinstance(start_time, str):
-                    start_time = QTime.fromString(start_time, "HH:mm")
-                    activity['start_time'] = start_time
-            except Exception as e:
-                print(f"Error converting start time: {e}")
-                return
-                
-        if not isinstance(end_time, QTime):
-            try:
-                if isinstance(end_time, str):
-                    end_time = QTime.fromString(end_time, "HH:mm")
-                    activity['end_time'] = end_time
-            except Exception as e:
-                print(f"Error converting end time: {e}")
-                return
-        
-        # Calculate position with minute precision
-        start_minutes = start_time.hour() * 60 + start_time.minute()
-        end_minutes = end_time.hour() * 60 + end_time.minute()
-        
-        # Handle activities that span to the next day
-        if end_minutes <= start_minutes:
-            # Assume it ends on the next day
-            end_minutes = 24 * 60 - 1  # End at 23:59
-            print(f"Activity spans to next day, capped at midnight: {activity.get('title')}")
-        
-        # Calculate timeline coordinates with minute precision
-        start_minutes_on_timeline = start_minutes - (TIMELINE_START_HOUR * 60)
-        end_minutes_on_timeline = end_minutes - (TIMELINE_START_HOUR * 60)
-        
-        # Calculate y-position and height
-        y_pos = (start_minutes_on_timeline / 60) * HOUR_HEIGHT
-        height = ((end_minutes_on_timeline - start_minutes_on_timeline) / 60) * HOUR_HEIGHT
-        
-        # Ensure minimum height for visibility (30 pixels)
-        height = max(height, 30)
-        
-        # Calculate available width
-        available_width = TIMELINE_WIDTH - TIMELINE_LEFT_MARGIN - 20  # Leave some margin
-        
-        # Check for overlapping activities and organize them in columns
-        overlapping_items = []
-        column_assignments = {}  # To track which column each overlapping item is in
-        
-        # First pass: identify all overlapping activities
-        for item_id, item in self.activity_items.items():
-            if item_id != activity_id and item in self.scene.items():
-                item_rect = item.rect()
-                
-                # Check if the activity overlaps with this one
-                item_top = item_rect.y()
-                item_bottom = item_rect.y() + item_rect.height()
-                
-                # If there's any overlap in the vertical space
-                if (y_pos <= item_bottom and item_top <= y_pos + height):
-                    overlapping_items.append(item)
-                    # Remember existing column assignment
-                    if hasattr(item, 'column_index'):
-                        column_assignments[item] = item.column_index
+                # Try to parse time string in format "HH:MM" or "H:MM AM/PM"
+                if ":" in start_time:
+                    if "AM" in start_time.upper() or "PM" in start_time.upper():
+                        # Parse 12-hour format
+                        start_time = QTime.fromString(start_time, "h:mm AP")
                     else:
-                        column_assignments[item] = 0  # Default
+                        # Parse 24-hour format
+                        start_time = QTime.fromString(start_time, "HH:mm")
+                else:
+                    print(f"Warning: Could not parse start time: {start_time}")
+                    return
+            except Exception as e:
+                print(f"Error parsing start time: {e}")
+                return
+            
+        # Handle end time conversion
+        end_time = activity.get('end_time')
+        if isinstance(end_time, str):
+            try:
+                # Try to parse time string
+                if ":" in end_time:
+                    if "AM" in end_time.upper() or "PM" in end_time.upper():
+                        # Parse 12-hour format
+                        end_time = QTime.fromString(end_time, "h:mm AP")
+                    else:
+                        # Parse 24-hour format
+                        end_time = QTime.fromString(end_time, "HH:mm")
+                else:
+                    print(f"Warning: Could not parse end time: {end_time}")
+                    # Use start time + 1 hour as fallback
+                    if isinstance(start_time, QTime):
+                        end_time = start_time.addSecs(3600)
+            except Exception as e:
+                print(f"Error parsing end time: {e}")
+                # Use start time + 1 hour as fallback
+                if isinstance(start_time, QTime):
+                    end_time = start_time.addSecs(3600)
         
-        # Second pass: determine best column for this activity
-        used_columns = set(column_assignments.values())
-        column_index = 0
-        max_columns = 4  # Limit number of columns to avoid too narrow activities
+        # If we still don't have a valid end time, use start + 1 hour
+        if not end_time or (isinstance(end_time, QTime) and not end_time.isValid()):
+            if isinstance(start_time, QTime):
+                end_time = start_time.addSecs(3600)
+            else:
+                print(f"Warning: Could not determine end time for activity: {activity}")
+                return
+            
+        # Format time strings for display
+        if isinstance(start_time, QTime):
+            activity['formatted_start_time'] = start_time.toString("h:mm AP")
+        if isinstance(end_time, QTime):
+            activity['formatted_end_time'] = end_time.toString("h:mm AP")
+            
+        # Calculate time positions
+        start_hour = start_time.hour()
+        start_minute = start_time.minute()
+        start_y = (start_hour + start_minute / 60.0) * HOUR_HEIGHT
         
-        # Find first available column
-        while column_index < max_columns and column_index in used_columns:
-            column_index += 1
+        end_hour = end_time.hour()
+        end_minute = end_time.minute()
+        end_y = (end_hour + end_minute / 60.0) * HOUR_HEIGHT
         
-        # If we're beyond max columns, reuse columns with fewest overlaps
-        if column_index >= max_columns:
-            column_counts = {}
-            for col in range(max_columns):
-                column_counts[col] = sum(1 for c in column_assignments.values() if c == col)
-            column_index = min(column_counts, key=column_counts.get)
+        # Handle end time being earlier than start time (spans to next day)
+        if end_y <= start_y:
+            end_y = (24 + end_hour + end_minute / 60.0) * HOUR_HEIGHT
         
-        # Calculate total columns needed
-        columns = max(len(set(column_assignments.values())) + 1, column_index + 1)
-        columns = min(columns, max_columns)  # Enforce max columns limit
+        # Ensure minimum height for visibility
+        height = max(end_y - start_y, 30)
         
-        # Calculate width for each column
-        column_width = available_width / columns
-        x_pos = TIMELINE_LEFT_MARGIN + 10 + (column_index * column_width)
-        width = column_width - 10  # Leave a small gap between columns
+        # Find a suitable x position (handle overlapping activities)
+        x_pos = TIMELINE_LEFT_MARGIN
+        width = 200  # Default width
         
-        print(f"Positioning activity {activity.get('title')}: start={start_time.toString()}, "
-              f"end={end_time.toString()}, y={y_pos}, h={height}, col={column_index}/{columns}")
-        
-        # Create the item and add to scene
-        item = ActivityTimelineItem(
-            activity,
-            x_pos,
-            y_pos,
-            width,
-            height,
-            None
-        )
-        item.column_index = column_index  # Store column index for future reference
+        # Create the activity item
+        item = ActivityTimelineItem(activity, x_pos, start_y, width, height)
         self.scene.addItem(item)
-        self.activity_items[activity_id] = item
+        self.activity_items[activity.get('id')] = item
         
-        # Refresh positions to ensure proper layout
-        if overlapping_items and len(overlapping_items) > 2:
-            self.refreshActivityPositions()
+        print(f"Added activity {activity.get('title')} with extra wide width {width}")
+        
+        # Don't refresh positions to maintain consistent sizing
     
     def clearActivities(self):
         """Remove all activities from the timeline."""
@@ -951,16 +849,9 @@ class TimelineView(QGraphicsView):
         super().mouseReleaseEvent(event)
     
     def wheelEvent(self, event):
-        """Enhanced wheel event to support both vertical and horizontal scrolling."""
-        # If Ctrl key is pressed, zoom in/out
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            if event.angleDelta().y() > 0:
-                self.scale(1.2, 1.2)
-            else:
-                self.scale(0.8, 0.8)
-        else:
-            # Otherwise, use normal scrolling
-            super().wheelEvent(event)
+        """Enhanced wheel event to support vertical scrolling only without zooming."""
+        # Just use normal scrolling, no zooming to avoid resizing blocks
+        super().wheelEvent(event)
 
 # Make sure DailyView is accessible for isinstance checks in TimelineView
 # This needs to be placed here before DailyView is used in any isinstance checks
