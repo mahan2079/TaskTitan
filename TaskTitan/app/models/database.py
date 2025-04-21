@@ -1,10 +1,14 @@
 import sqlite3
 from datetime import datetime, timedelta
+from app.models.database_schema import CREATE_TABLES_SQL
 
 def initialize_db():
     """Initialize the database with the required tables."""
     conn = sqlite3.connect("tasktitan.db")
     cursor = conn.cursor()
+    
+    # Create activities table (unified system for tasks, events, habits)
+    cursor.execute(CREATE_TABLES_SQL["activities"])
     
     # Create goals table
     cursor.execute("""
@@ -16,18 +20,6 @@ def initialize_db():
             due_time TIME,
             completed INTEGER DEFAULT 0,
             priority INTEGER DEFAULT 1
-        )
-    """)
-    
-    # Create tasks table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            goal_id INTEGER,
-            description TEXT NOT NULL,
-            duration_minutes INTEGER,
-            completed INTEGER DEFAULT 0,
-            FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE
         )
     """)
     
@@ -52,7 +44,20 @@ def initialize_db():
         )
     """)
     
-    # Create habits table
+    # Create old tables for backward compatibility
+    # Tasks table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            goal_id INTEGER,
+            description TEXT NOT NULL,
+            duration_minutes INTEGER,
+            completed INTEGER DEFAULT 0,
+            FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE
+        )
+    """)
+    
+    # Habits table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS habits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,7 +68,7 @@ def initialize_db():
         )
     """)
     
-    # Create habit_completions table
+    # Habit completions table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS habit_completions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,7 +78,7 @@ def initialize_db():
         )
     """)
     
-    # Create events table
+    # Events table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,6 +123,16 @@ def initialize_db():
             completed INTEGER DEFAULT 0,
             date DATE DEFAULT CURRENT_DATE
         )
+    """)
+    
+    # Create migration trigger to update timestamps
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS update_activity_timestamp 
+        AFTER UPDATE ON activities
+        BEGIN
+            UPDATE activities SET updated_at = CURRENT_TIMESTAMP 
+            WHERE id = NEW.id;
+        END;
     """)
     
     conn.commit()

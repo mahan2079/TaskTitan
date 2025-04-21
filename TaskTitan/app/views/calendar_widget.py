@@ -3,104 +3,192 @@ from PyQt6.QtWidgets import QDialog, QPushButton, QLineEdit, QComboBox, QTimeEdi
 from PyQt6.QtCore import Qt, QDate, QSize, pyqtSignal, QPointF, QTime
 from PyQt6.QtGui import QColor, QPainter, QPen, QBrush, QPalette, QLinearGradient, QFont, QRadialGradient
 
+# Import ActivityAddEditDialog for consistency across the application
+from app.views.unified_activities_widget import ActivityAddEditDialog
+
 class EventDialog(QDialog):
     """Dialog for adding or editing calendar events."""
     
     def __init__(self, parent=None, event_date=None):
         super().__init__(parent)
         self.setWindowTitle("Add Event")
-        self.resize(400, 300)
+        self.resize(420, 350)
         self.setModal(True)  # Make sure dialog is modal and blocks input to other windows
         
         self.event_date = event_date or QDate.currentDate()
         
-        # Create form layout
-        layout = QFormLayout(self)
-        layout.setSpacing(12)  # Increase spacing for better readability
+        # Create a more modern layout
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #FFFFFF;
+            }
+            QLabel {
+                color: #1E293B;
+                font-size: 14px;
+            }
+            QLineEdit, QTimeEdit, QComboBox {
+                border: 1px solid #CBD5E1;
+                border-radius: 8px;
+                padding: 10px;
+                background-color: #F8FAFC;
+                color: #334155;
+                font-size: 14px;
+                selection-background-color: #DBEAFE;
+            }
+            QLineEdit:focus, QTimeEdit:focus, QComboBox:focus {
+                border-color: #93C5FD;
+                background-color: white;
+            }
+        """)
         
-        # Event title
+        # Main layout with padding
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(15)
+        
+        # Create form layout
+        form_layout = QFormLayout()
+        form_layout.setSpacing(15)  # Increase spacing for better readability
+        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        
+        # Event title with better styling
+        title_label = QLabel("Title:")
+        title_label.setStyleSheet("font-weight: bold;")
+        
         self.title_edit = QLineEdit()
         self.title_edit.setPlaceholderText("Enter event title")
-        self.title_edit.setMinimumHeight(30)  # Make input fields taller
-        layout.addRow("Title:", self.title_edit)
+        self.title_edit.setMinimumHeight(40)  # Make input fields taller
+        
+        form_layout.addRow(title_label, self.title_edit)
         
         # Event time
+        time_label = QLabel("Time:")
+        time_label.setStyleSheet("font-weight: bold;")
+        
         self.time_edit = QTimeEdit()
         self.time_edit.setTime(QTime.currentTime())
         self.time_edit.setDisplayFormat("hh:mm AP")
-        self.time_edit.setMinimumHeight(30)
-        layout.addRow("Time:", self.time_edit)
+        self.time_edit.setMinimumHeight(40)
+        
+        form_layout.addRow(time_label, self.time_edit)
         
         # Event type/category
+        category_label = QLabel("Category:")
+        category_label.setStyleSheet("font-weight: bold;")
+        
         self.category_combo = QComboBox()
         self.category_combo.addItems(["Work", "Personal", "Meeting", "Reminder", "Other"])
-        self.category_combo.setMinimumHeight(30)
-        layout.addRow("Category:", self.category_combo)
+        self.category_combo.setMinimumHeight(40)
         
-        # Event color
-        color_layout = QHBoxLayout()
+        form_layout.addRow(category_label, self.category_combo)
+        
+        # Event color with improved UI
+        color_label = QLabel("Color:")
+        color_label.setStyleSheet("font-weight: bold;")
+        
+        color_container = QWidget()
+        color_layout = QHBoxLayout(color_container)
+        color_layout.setContentsMargins(0, 0, 0, 0)
+        color_layout.setSpacing(10)
+        
         self.color_btn = QPushButton()
-        self.color_btn.setFixedSize(100, 30)
+        self.color_btn.setFixedSize(120, 40)
         self.current_color = QColor("#6366F1")  # Default color
         self.update_color_button()
         self.color_btn.clicked.connect(self.select_color)
         
-        color_label = QLabel("Choose Color:")
-        color_layout.addWidget(color_label)
+        # Add color preview box
+        self.color_preview = QFrame()
+        self.color_preview.setFixedSize(40, 40)
+        self.color_preview.setStyleSheet(f"""
+            background-color: {self.current_color.name()};
+            border-radius: 8px;
+            border: 1px solid #CBD5E1;
+        """)
+        
+        color_layout.addWidget(self.color_preview)
         color_layout.addWidget(self.color_btn)
-        layout.addRow(color_layout)
         
-        # Date display (read-only)
-        self.date_label = QLabel(self.event_date.toString("dddd, MMMM d, yyyy"))
-        self.date_label.setStyleSheet("font-weight: bold; color: #4F46E5;")
-        layout.addRow("Date:", self.date_label)
+        form_layout.addRow(color_label, color_container)
         
-        # Add some space
-        spacer = QWidget()
-        spacer.setFixedHeight(15)
-        layout.addRow("", spacer)
+        # Date display (read-only) with clear styling
+        date_label = QLabel("Date:")
+        date_label.setStyleSheet("font-weight: bold;")
         
-        # Buttons
-        button_layout = QHBoxLayout()
+        self.date_display = QLabel(self.event_date.toString("dddd, MMMM d, yyyy"))
+        self.date_display.setStyleSheet("""
+            font-weight: bold;
+            color: #4F46E5;
+            background-color: #EEF2FF;
+            padding: 10px;
+            border-radius: 8px;
+        """)
         
-        # Cancel button
+        form_layout.addRow(date_label, self.date_display)
+        
+        # Add form layout to main layout
+        main_layout.addLayout(form_layout)
+        
+        # Add spacer for better layout
+        main_layout.addSpacing(10)
+        
+        # Button container with modern styling
+        button_container = QWidget()
+        button_layout = QHBoxLayout(button_container)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(15)
+        
+        # Cancel button with flat modern style
         self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setMinimumHeight(45)
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_btn.setStyleSheet("""
             QPushButton {
-                background-color: #E2E8F0;
-                color: #334155;
+                background-color: #F1F5F9;
+                color: #475569;
                 border: none;
-                border-radius: 4px;
-                padding: 10px 20px;
+                border-radius: 8px;
+                padding: 12px 25px;
                 font-weight: bold;
+                font-size: 14px;
             }
             QPushButton:hover {
+                background-color: #E2E8F0;
+            }
+            QPushButton:pressed {
                 background-color: #CBD5E1;
             }
         """)
         self.cancel_btn.clicked.connect(self.reject)
         
-        # Save button
+        # Save button with gradient
         self.save_btn = QPushButton("Save Event")
+        self.save_btn.setMinimumHeight(45)
+        self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_btn.setStyleSheet("""
             QPushButton {
-                background-color: #6366F1;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6366F1, stop:1 #8B5CF6);
                 color: white;
                 border: none;
-                border-radius: 4px;
-                padding: 10px 20px;
+                border-radius: 8px;
+                padding: 12px 25px;
                 font-weight: bold;
+                font-size: 14px;
             }
             QPushButton:hover {
-                background-color: #4F46E5;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9);
             }
         """)
         self.save_btn.clicked.connect(self.accept)
         
+        # Add buttons to layout
         button_layout.addWidget(self.cancel_btn)
         button_layout.addWidget(self.save_btn)
         
-        layout.addRow("", button_layout)
+        main_layout.addWidget(button_container)
         
         # Set title as initial focus
         self.title_edit.setFocus()
@@ -111,18 +199,30 @@ class EventDialog(QDialog):
         if color.isValid():
             self.current_color = color
             self.update_color_button()
+            # Update the color preview as well
+            self.color_preview.setStyleSheet(f"""
+                background-color: {self.current_color.name()};
+                border-radius: 8px;
+                border: 1px solid #CBD5E1;
+            """)
     
     def update_color_button(self):
         """Update color button appearance with selected color."""
         self.color_btn.setStyleSheet(f"""
-            background-color: {self.current_color.name()};
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-weight: bold;
-            color: {'white' if self.current_color.lightness() < 128 else 'black'};
-            text-align: center;
+            QPushButton {{
+                background-color: white;
+                border: 1px solid #CBD5E1;
+                border-radius: 8px;
+                font-weight: bold;
+                color: #334155;
+                text-align: center;
+            }}
+            QPushButton:hover {{
+                background-color: #F8FAFC;
+                border-color: #93C5FD;
+            }}
         """)
-        self.color_btn.setText("Color")
+        self.color_btn.setText("Choose Color")
     
     def get_event_data(self):
         """Return the event data."""
@@ -426,14 +526,19 @@ class ModernCalendarWidget(QCalendarWidget):
             event_list = self.events[date_str]
             event_count = len(event_list)
             
-            # Draw colorful event indicators
+            # Draw colorful event indicators - improved smaller version
             if event_count > 0:
-                # Event dots container
-                dot_y = rect.bottom() - 12
-                total_width = (event_count * 6) + ((event_count - 1) * 2)  # dots + spaces
+                # Event dots container at the bottom of the cell
+                dot_y = rect.bottom() - 8  # Moved up a bit to be less obtrusive
+                
+                # Limit to max 5 dots
+                displayed_count = min(event_count, 5)
+                
+                # Calculate width based on number of dots
+                total_width = (displayed_count * 5) + ((displayed_count - 1) * 2)  # dots + spaces
                 start_x = rect.center().x() - (total_width / 2)
                 
-                for i in range(event_count):
+                for i in range(displayed_count):
                     # Use the event's color for the dot
                     if i < len(event_list):
                         dot_color = event_list[i].get("color", self.event_colors[i % len(self.event_colors)])
@@ -442,18 +547,25 @@ class ModernCalendarWidget(QCalendarWidget):
                         color_index = i % len(self.event_colors)
                         dot_color = self.event_colors[color_index]
                     
-                    # Create a radial gradient for each dot
-                    center_x = start_x + (i * 8)
+                    # Create a radial gradient for each dot - smaller, cleaner dots
+                    center_x = start_x + (i * 7)  # Tighter spacing
                     center = QPointF(center_x, dot_y)
                     
-                    dot_gradient = QRadialGradient(center, 3)
+                    # Smaller dots with subtle border
+                    painter.setPen(QPen(dot_color.darker(120), 0.5))
+                    dot_gradient = QRadialGradient(center, 2.5)  # Smaller size
                     dot_gradient.setColorAt(0, dot_color.lighter(120))
                     dot_gradient.setColorAt(1, dot_color)
                     
                     # Draw dot
-                    painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(dot_gradient)
-                    painter.drawEllipse(center, 3, 3)
+                    painter.drawEllipse(center, 2.5, 2.5)  # Smaller dots
+                
+                # If we have more events than can be displayed, add a "more" indicator
+                if event_count > 5:
+                    more_x = start_x + (displayed_count * 7) + 3
+                    painter.setPen(QColor(100, 100, 100, 180))
+                    painter.drawText(QPointF(more_x, dot_y + 3), "+")
         
         painter.restore()
         
@@ -494,8 +606,11 @@ class CalendarWithEventList(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         
-        # Main layout
-        layout = QVBoxLayout(self)
+        # Store reference to main window (if available through parent chain)
+        self.main_window = self.findMainWindow()
+        
+        # Main layout - change to horizontal layout for side-by-side
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
         
@@ -503,9 +618,11 @@ class CalendarWithEventList(QWidget):
         self.calendar = ModernCalendarWidget()
         layout.addWidget(self.calendar)
         
-        # Create events section
+        # Create events section - now beside the calendar
         self.events_widget = QWidget()
+        self.events_widget.setMinimumWidth(300)  # Ensure events panel has sufficient width
         events_layout = QVBoxLayout(self.events_widget)
+        events_layout.setContentsMargins(0, 0, 0, 10)  # Add bottom padding
         
         self.events_header = QLabel("Events")
         self.events_header.setStyleSheet("""
@@ -552,19 +669,20 @@ class CalendarWithEventList(QWidget):
         scroll_area.setWidget(events_container)
         events_layout.addWidget(scroll_area)
         
-        # Add event button - make it more prominent
+        # Add event button - make it more prominent and modern
         self.add_button = QPushButton("+ Add New Event")
-        self.add_button.setMinimumHeight(40)  # Make button taller
+        self.add_button.setMinimumHeight(48)  # Make button taller
+        self.add_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_button.setStyleSheet("""
             QPushButton {
                 background-color: #6366F1;
                 color: white;
                 border: none;
-                border-radius: 8px;
-                padding: 8px 16px;
+                border-radius: 10px;
+                padding: 12px 16px;
                 font-weight: bold;
-                font-size: 14px;
-                margin-top: 10px;
+                font-size: 15px;
+                margin-top: 15px;
             }
             QPushButton:hover {
                 background-color: #4F46E5;
@@ -577,22 +695,154 @@ class CalendarWithEventList(QWidget):
         
         layout.addWidget(self.events_widget)
         
-        # Set size policies
-        self.calendar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.events_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Adjust size policies for side-by-side layout
+        self.calendar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.events_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        
+        # Set the split between calendar and events (approximately 60/40)
+        layout.setStretchFactor(self.calendar, 60)
+        layout.setStretchFactor(self.events_widget, 40)
         
         # Connect signals
         self.calendar.selectionChanged.connect(self.updateEventsList)
         self.calendar.dateDoubleClicked.connect(self.addEvent)
         self.add_button.clicked.connect(self.addEvent)
         
-        # Set the split between calendar and events (approximately 60/40)
-        layout.setStretchFactor(self.calendar, 60)
-        layout.setStretchFactor(self.events_widget, 40)
+        # Load synchronized activities initially
+        self.syncWithActivitiesManager()
         
         # Initial update
         self.updateEventsList()
         
+    def findMainWindow(self):
+        """Find the main window by traversing parent hierarchy."""
+        parent = self.parent()
+        while parent is not None:
+            if parent.__class__.__name__ == "TaskTitanApp":
+                return parent
+            parent = parent.parent()
+        return None
+    
+    def syncWithActivitiesManager(self):
+        """Sync events with the activities manager database."""
+        if not self.main_window:
+            # Use sample events in standalone mode
+            return
+        
+        try:
+            # Clear existing events first
+            self.calendar.events = {}
+            
+            # Get activities from the UnifiedActivitiesView
+            activities_view = self.main_window.activitiesView
+            
+            if not hasattr(activities_view, 'activities'):
+                print("No activities found in the main system")
+                return
+                
+            # Iterate through all activities
+            for activity_type in activities_view.activities:
+                for activity in activities_view.activities[activity_type]:
+                    # Only process events (type 'event')
+                    if activity_type == 'event':
+                        # Extract date and convert to QDate
+                        if 'date' in activity:
+                            # Handle different date formats
+                            if isinstance(activity['date'], QDate):
+                                date = activity['date']
+                            elif isinstance(activity['date'], str):
+                                date = QDate.fromString(activity['date'], "yyyy-MM-dd")
+                            else:
+                                # Skip if date format is unknown
+                                continue
+                                
+                            # Create the calendar event
+                            event_data = {
+                                "id": activity.get('id', None),
+                                "title": activity.get('title', 'Untitled'),
+                                "date": date,
+                                "time": activity.get('start_time', QTime(0, 0)),
+                                "category": activity.get('category', 'Other'),
+                                "color": self.getCategoryColor(activity.get('category', 'Other')),
+                                "activity_data": activity  # Store original activity data
+                            }
+                            
+                            # Add to the calendar
+                            date_str = date.toString("yyyy-MM-dd")
+                            if date_str not in self.calendar.events:
+                                self.calendar.events[date_str] = []
+                            
+                            self.calendar.events[date_str].append(event_data)
+            
+            # Update the calendar display
+            self.calendar.updateCells()
+            
+        except Exception as e:
+            print(f"Error syncing with activities manager: {e}")
+            
+    def sync_with_activities(self, activities_manager):
+        """Sync calendar with activities from the provided activities manager.
+        
+        Args:
+            activities_manager: An instance of ActivitiesManager 
+        """
+        try:
+            # Clear existing events first
+            self.calendar.events = {}
+            
+            # Get all activities
+            if activities_manager:
+                activities = activities_manager.get_all_activities()
+                
+                # Process activities and add events to calendar
+                for activity in activities:
+                    # Only process events
+                    if activity.get('type') == 'event':
+                        # Extract date
+                        date = activity.get('date')
+                        if isinstance(date, str):
+                            date = QDate.fromString(date, "yyyy-MM-dd")
+                            
+                        # Create calendar event object
+                        event_data = {
+                            "id": activity.get('id'),
+                            "title": activity.get('title', 'Untitled'),
+                            "date": date,
+                            "time": activity.get('start_time', QTime(0, 0)),
+                            "category": activity.get('category', 'Other'),
+                            "color": self.getCategoryColor(activity.get('category', 'Other')),
+                            "activity_data": activity  # Store original data
+                        }
+                        
+                        # Add to calendar events
+                        date_str = date.toString("yyyy-MM-dd")
+                        if date_str not in self.calendar.events:
+                            self.calendar.events[date_str] = []
+                        
+                        self.calendar.events[date_str].append(event_data)
+            
+            # Update calendar display
+            self.calendar.updateCells()
+            # Update events list if a date is selected
+            self.updateEventsList()
+            
+        except Exception as e:
+            print(f"Error syncing calendar with activities: {e}")
+    
+    def getCategoryColor(self, category):
+        """Get color for a specific category."""
+        # Basic category to color mapping
+        category_colors = {
+            "Work": QColor("#F87171"),  # Red
+            "Personal": QColor("#FBBF24"),  # Amber
+            "Meeting": QColor("#34D399"),  # Emerald
+            "Health": QColor("#60A5FA"),  # Blue
+            "Other": QColor("#A78BFA")   # Purple
+        }
+        
+        # Return the color for the category, or default color if not found
+        return category_colors.get(category, QColor("#6366F1"))
+
     def updateEventsList(self):
         """Update the events list for the selected date."""
         selected_date = self.calendar.selectedDate()
@@ -615,81 +865,385 @@ class CalendarWithEventList(QWidget):
                 color: #94A3B8;
                 font-style: italic;
                 padding: 10px;
+                font-size: 14px;
             """)
             no_events_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.events_grid.addWidget(no_events_label, 0, 0, 1, 3)
+            self.events_grid.addWidget(no_events_label, 0, 0, 1, 4)
             return
-        
-        # Column headers
-        time_header = QLabel("Time")
-        time_header.setStyleSheet("font-weight: bold; color: #4F46E5;")
-        
-        type_header = QLabel("Type")
-        type_header.setStyleSheet("font-weight: bold; color: #4F46E5;")
-        
-        title_header = QLabel("Title")
-        title_header.setStyleSheet("font-weight: bold; color: #4F46E5;")
-        
-        self.events_grid.addWidget(time_header, 0, 0)
-        self.events_grid.addWidget(type_header, 0, 1)
-        self.events_grid.addWidget(title_header, 0, 2)
         
         # Add events to grid
         for row, event in enumerate(events, 1):
-            # Event container frame for better styling
-            event_frame = QFrame()
-            event_frame.setStyleSheet("""
-                background-color: #F8FAFC;
-                border-radius: 4px;
-                border: 1px solid #E2E8F0;
-                padding: 4px;
+            # Create a modern card-style container for each event
+            event_card = QFrame()
+            event_card.setObjectName("event-card")
+            event_card.setStyleSheet("""
+                #event-card {
+                    background-color: white;
+                    border-radius: 8px;
+                    border: 1px solid #E2E8F0;
+                    margin: 2px 0;
+                }
+                #event-card:hover {
+                    border-color: #CBD5E1;
+                    background-color: #F8FAFC;
+                }
             """)
-            event_layout = QGridLayout(event_frame)
-            event_layout.setContentsMargins(5, 5, 5, 5)
-            event_layout.setSpacing(5)
             
-            # Time
+            # Set a maximum height for the card to make it more compact
+            event_card.setMaximumHeight(70)
+            
+            # Use a horizontal layout for the event card content
+            card_layout = QHBoxLayout(event_card)
+            card_layout.setContentsMargins(8, 5, 8, 5)  # Reduce margins
+            card_layout.setSpacing(6)  # Reduce spacing
+            
+            # Left side with time and color indicator
+            left_widget = QWidget()
+            left_layout = QVBoxLayout(left_widget)
+            left_layout.setContentsMargins(0, 0, 0, 0)
+            left_layout.setSpacing(2)  # Reduce spacing
+            left_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            
+            # Time display
             time_str = event.get("time").toString("hh:mm AP")
             time_label = QLabel(time_str)
-            time_label.setStyleSheet("font-weight: bold;")
+            time_label.setStyleSheet("""
+                font-weight: bold;
+                color: #1E293B;
+                font-size: 11px;  /* Reduced font size */
+            """)
             
             # Category with color indicator
             color = event.get("color", QColor("#6366F1"))
             category = event.get("category", "")
-            category_label = QLabel(f" {category}")
-            category_label.setStyleSheet(f"""
-                padding-left: 15px;
-                background: qlineargradient(x1:0, y1:0.5, x2:0.2, y2:0.5,
-                                           stop:0 {color.name()}, stop:0.2 {color.name()},
-                                           stop:0.2 transparent);
+            
+            # Create a frame with the category color
+            color_indicator = QFrame()
+            color_indicator.setFixedSize(40, 4)  # Smaller indicator
+            color_indicator.setStyleSheet(f"""
+                background-color: {color.name()};
                 border-radius: 2px;
             """)
             
-            # Title
+            # Category label
+            category_label = QLabel(category)
+            category_label.setStyleSheet("""
+                color: #64748B;
+                font-size: 10px;  /* Reduced font size */
+            """)
+            
+            # Add to left section
+            left_layout.addWidget(time_label)
+            left_layout.addWidget(color_indicator)
+            left_layout.addWidget(category_label)
+            
+            # Middle section with title
+            title_widget = QWidget()
+            title_layout = QVBoxLayout(title_widget)
+            title_layout.setContentsMargins(0, 0, 0, 0)
+            title_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            
             title_label = QLabel(event.get("title", ""))
-            title_label.setStyleSheet("font-size: 13px;")
-            title_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            title_label.setStyleSheet("""
+                font-size: 12px;  /* Reduced font size */
+                color: #334155;
+                font-weight: 500;
+            """)
+            title_label.setWordWrap(True)
+            title_layout.addWidget(title_label)
             
-            # Add to event layout
-            event_layout.addWidget(time_label, 0, 0)
-            event_layout.addWidget(category_label, 0, 1)
-            event_layout.addWidget(title_label, 0, 2)
+            # Right section with action buttons
+            actions_widget = QWidget()
+            actions_layout = QHBoxLayout(actions_widget)
+            actions_layout.setContentsMargins(0, 0, 0, 0)
+            actions_layout.setSpacing(4)  # Reduce spacing
+            actions_layout.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             
-            # Add event frame to main grid - span all columns
-            self.events_grid.addWidget(event_frame, row, 0, 1, 3)
+            # Edit button
+            edit_btn = QPushButton()
+            edit_btn.setToolTip("Edit Event")
+            edit_btn.setFixedSize(24, 24)  # Smaller button
+            edit_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #EFF6FF;
+                    border: 1px solid #BFDBFE;
+                    border-radius: 5px;
+                    padding: 1px;
+                    font-size: 12px;  /* Reduced font size */
+                }
+                QPushButton:hover {
+                    background-color: #DBEAFE;
+                }
+            """)
+            # Font-based icon as a simple edit pencil
+            edit_btn.setText("✎")
+            edit_btn.clicked.connect(lambda checked, e=event: self.editEvent(e))
+            
+            # Delete button
+            delete_btn = QPushButton()
+            delete_btn.setToolTip("Delete Event")
+            delete_btn.setFixedSize(24, 24)  # Smaller button
+            delete_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #FEF2F2;
+                    border: 1px solid #FECACA;
+                    border-radius: 5px;
+                    padding: 1px;
+                    font-size: 12px;  /* Reduced font size */
+                }
+                QPushButton:hover {
+                    background-color: #FEE2E2;
+                }
+            """)
+            # Font-based icon as a simple X
+            delete_btn.setText("✕")
+            delete_btn.clicked.connect(lambda checked, e=event: self.deleteEvent(e))
+            
+            # Add buttons to actions container
+            actions_layout.addWidget(edit_btn)
+            actions_layout.addWidget(delete_btn)
+            
+            # Add the three sections to the card layout
+            card_layout.addWidget(left_widget, 1)
+            card_layout.addWidget(title_widget, 2)
+            card_layout.addWidget(actions_widget, 1)
+            
+            # Add event card to the main grid - span all columns
+            self.events_grid.addWidget(event_card, row, 0, 1, 4)
     
     def addEvent(self, date=None):
         """Open dialog to add a new event."""
         if not date:
             date = self.calendar.selectedDate()
-            
-        dialog = EventDialog(self, date)
-        result = dialog.exec()
         
-        # More explicit check for dialog result
-        if result == QDialog.DialogCode.Accepted:
-            event_data = dialog.get_event_data()
-            self.calendar.addEvent(event_data)
-            self.updateEventsList()
-            return True
-        return False 
+        # Check if connected to main app and use ActivityAddEditDialog for consistency
+        if self.main_window and hasattr(self.main_window, 'activities_manager'):
+            # Create event activity data with default values
+            activity_data = {
+                'type': 'event',
+                'title': '',
+                'date': date,
+                'start_time': QTime.currentTime(),
+                'end_time': QTime.currentTime().addSecs(3600),  # Default 1 hour duration
+                'category': 'Other',
+                'color': '#6366F1'  # Default color
+            }
+            
+            # Use the ActivityAddEditDialog for consistency with activities view
+            dialog = ActivityAddEditDialog(self, activity_data, edit_mode=False)
+            
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                # Get the data from the dialog
+                activity_data = dialog.getActivityData()
+                
+                # 1. Add to activities manager
+                activity_id = self.main_window.activities_manager.add_activity(activity_data)
+                
+                if activity_id:
+                    # Add ID to the data
+                    activity_data['id'] = activity_id
+                    
+                    # 2. Add to calendar for immediate visual feedback
+                    calendar_event = {
+                        'id': activity_id,
+                        'title': activity_data['title'],
+                        'date': activity_data['date'],
+                        'time': activity_data['start_time'],
+                        'category': activity_data['category'],
+                        'color': QColor(activity_data['color']),
+                        'activity_data': activity_data  # Store original data
+                    }
+                    
+                    # Add to calendar events
+                    date_str = date.toString("yyyy-MM-dd")
+                    if date_str not in self.calendar.events:
+                        self.calendar.events[date_str] = []
+                    self.calendar.events[date_str].append(calendar_event)
+                    
+                    # 3. Update the activities view if it exists
+                    if hasattr(self.main_window, 'activitiesView'):
+                        # If the activities view has its own sync method, call it
+                        if hasattr(self.main_window.activitiesView, 'syncWithCalendar'):
+                            self.main_window.activitiesView.syncWithCalendar()
+                    
+                    # Update the events list display
+                    self.updateEventsList()
+                    # Update the calendar cells
+                    self.calendar.updateCells()
+                    return True
+        else:
+            # Fallback to original dialog for standalone mode
+            dialog = EventDialog(self, date)
+            result = dialog.exec()
+            
+            # More explicit check for dialog result
+            if result == QDialog.DialogCode.Accepted:
+                event_data = dialog.get_event_data()
+                
+                # 1. Add to calendar for immediate visual feedback
+                self.calendar.addEvent(event_data)
+                
+                # 2. If connected to main app, add to activities manager
+                if self.main_window and hasattr(self.main_window, 'activities_manager'):
+                    try:
+                        # Format the data for the activities manager
+                        activity_data = {
+                            'type': 'event',
+                            'title': event_data['title'],
+                            'date': event_data['date'],
+                            'start_time': event_data['time'],
+                            'end_time': QTime(event_data['time'].hour() + 1, event_data['time'].minute()),  # Default 1 hour duration
+                            'category': event_data['category'],
+                            'color': event_data['color'].name()  # Store color information
+                        }
+                        
+                        # Add directly to activities manager
+                        activity_id = self.main_window.activities_manager.add_activity(activity_data)
+                        
+                        # Also notify the activities view if it exists
+                        if hasattr(self.main_window, 'activitiesView'):
+                            activity_data['id'] = activity_id
+                            self.main_window.activitiesView.activities.append(activity_data)
+                            self.main_window.activitiesView.refreshActivitiesList()
+                            # Emit the signal
+                            self.main_window.onActivityAdded(activity_data)
+                    except Exception as e:
+                        print(f"Error adding event to activities manager: {e}")
+                
+                # Update the events list display
+                self.updateEventsList()
+                return True
+        
+        return False
+        
+    def editEvent(self, event):
+        """Open dialog to edit an existing event."""
+        # Check if it's an existing event with database ID
+        is_existing = 'activity_data' in event and 'id' in event['activity_data']
+        activity_id = event['activity_data'].get('id') if is_existing else None
+        
+        if activity_id and self.main_window and hasattr(self.main_window, 'activities_manager'):
+            # Get the full activity data from the activities manager
+            activity_data = self.main_window.activities_manager.get_activity_by_id(activity_id)
+            
+            if activity_data:
+                # Use the ActivityAddEditDialog from unified_activities_widget
+                dialog = ActivityAddEditDialog(self, activity_data, edit_mode=True)
+                
+                if dialog.exec() == QDialog.DialogCode.Accepted:
+                    # Get the updated data
+                    updated_data = dialog.getActivityData()
+                    
+                    # Update in calendar's UI first for immediate visual feedback
+                    updated_event = {
+                        'id': event['id'],
+                        'title': updated_data['title'],
+                        'date': updated_data['date'],
+                        'time': updated_data['start_time'],
+                        'category': updated_data['category'],
+                        'color': QColor(updated_data['color']) if 'color' in updated_data else event.get('color', QColor("#6366F1")),
+                        'activity_data': event['activity_data']  # Keep original reference
+                    }
+                    
+                    # Update in calendar display
+                    date_str = event['date'].toString("yyyy-MM-dd")
+                    if date_str in self.calendar.events:
+                        for i, e in enumerate(self.calendar.events[date_str]):
+                            if e['id'] == event['id']:
+                                self.calendar.events[date_str][i] = updated_event
+                                break
+                    
+                    # 2. If connected to main app, update in activities manager
+                    if self.main_window and hasattr(self.main_window, 'activities_manager') and activity_id:
+                        try:
+                            # Update in activities manager
+                            self.main_window.activities_manager.update_activity(activity_id, updated_data)
+                            
+                            # Also update in activities view if it exists
+                            if hasattr(self.main_window, 'activitiesView'):
+                                # If the activities view has its own sync method, call it
+                                if hasattr(self.main_window.activitiesView, 'syncWithCalendar'):
+                                    self.main_window.activitiesView.syncWithCalendar()
+                        except Exception as e:
+                            print(f"Error updating event in activities manager: {e}")
+                    
+                    # Update the events list display
+                    self.updateEventsList()
+                    # Update the calendar cells
+                    self.calendar.updateCells()
+                    return True
+        else:
+            # Fallback to original dialog for events not in the database
+            # Create a dialog with event data
+            dialog = EventDialog(self, event["date"])
+            
+            # Populate the dialog with event data
+            dialog.title_edit.setText(event["title"])
+            dialog.time_edit.setTime(event["time"])
+            dialog.current_color = event.get("color", QColor("#6366F1"))
+            dialog.update_color_button()
+            
+            # Set the category
+            category_index = dialog.category_combo.findText(event["category"])
+            if category_index >= 0:
+                dialog.category_combo.setCurrentIndex(category_index)
+            
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                # Get updated event data
+                updated_event = dialog.get_event_data()
+                
+                # Update the event in the calendar
+                date_str = event["date"].toString("yyyy-MM-dd")
+                if date_str in self.calendar.events:
+                    for i, e in enumerate(self.calendar.events[date_str]):
+                        if e["id"] == event["id"]:
+                            self.calendar.events[date_str][i] = updated_event
+                            break
+                
+                # Update the events list display
+                self.updateEventsList()
+                # Update the calendar cells
+                self.calendar.updateCells()
+                return True
+            
+        return False
+    
+    def deleteEvent(self, event):
+        """Delete an event from the calendar."""
+        # Remove the event from the calendar
+        date_str = event["date"].toString("yyyy-MM-dd")
+        if date_str in self.calendar.events:
+            self.calendar.events[date_str] = [e for e in self.calendar.events[date_str] if e != event]
+            if not self.calendar.events[date_str]:
+                del self.calendar.events[date_str]
+        
+        # Get activity type for proper signal emission
+        activity_type = "event"
+        
+        # If connected to main app, also delete from activities manager
+        if self.main_window and hasattr(self.main_window, 'activities_manager') and 'activity_data' in event:
+            try:
+                # Extract the original activity ID
+                activity_id = event['activity_data'].get('id', None)
+                
+                if activity_id is not None:
+                    # Delete from activities manager
+                    self.main_window.activities_manager.delete_activity(activity_id)
+                    
+                    # Also update in activities view if it exists
+                    if hasattr(self.main_window, 'activitiesView'):
+                        # If the activities view has its own sync method, call it
+                        if hasattr(self.main_window.activitiesView, 'syncWithCalendar'):
+                            self.main_window.activitiesView.syncWithCalendar()
+                        
+                        # Emit the signal for activity deletion if the main window has it
+                        if hasattr(self.main_window, 'onActivityDeleted'):
+                            self.main_window.onActivityDeleted(activity_id, activity_type)
+            except Exception as e:
+                print(f"Error deleting event from activities manager: {e}")
+        
+        # Refresh the display
+        self.updateEventsList()
+        self.calendar.updateCells()
+        
+        return True 

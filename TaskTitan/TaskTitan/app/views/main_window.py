@@ -6,13 +6,19 @@ from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFrame,
     QLabel, QPushButton, QToolBar, QTabWidget, QScrollArea, QStackedWidget,
-    QGridLayout, QSizePolicy, QSpacerItem, QMenu, QCalendarWidget, QProgressBar, QMessageBox
+    QGridLayout, QSizePolicy, QSpacerItem, QMenu, QCalendarWidget, QProgressBar, QMessageBox, QFormLayout, QComboBox, QCheckBox, QFileDialog, QSpinBox, QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PyQt6.QtCore import Qt, QSize, QDate, QTime, QTimer, pyqtSignal, QPropertyAnimation, QRect, QRectF
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor, QFont
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor, QFont, QPainter, QBrush, QPen, QGuiApplication, QCursor, QShortcut, QKeySequence
 import darkdetect
 import pyqtgraph as pg
 import sqlite3
+import getpass
+import pathlib
+import threading
+import time
+import tempfile
+import uuid
 
 # Set up correct imports based on how the module is being used
 if __name__ == "__main__" or not __package__:
@@ -23,32 +29,49 @@ if __name__ == "__main__" or not __package__:
     # Direct imports
     from app.models.database import initialize_db
     from app.models.database_manager import get_manager, close_connection
-    from app.views.calendar_widget import ModernCalendarWidget
-    from app.views.task_widget import TaskWidget
+    from app.views.calendar_widget import ModernCalendarWidget, CalendarWithEventList
+    from app.views.task_widget import TaskWidget, BaseTaskDialog, TaskDialog
     from app.views.goal_widget import GoalWidget
-    from app.views.habit_widget import HabitWidget
     from app.views.productivity_view import ProductivityView
     from app.views.pomodoro_widget import PomodoroWidget
     from app.views.weekly_view import WeeklyView
     from app.views.daily_view import DailyView
     from app.views.settings_dialog import SettingsDialog
-    from app.views.task_list_view import TaskListView
-    from app.resources import get_icon, get_pixmap, VIEW_NAMES, DASHBOARD_VIEW, TASKS_VIEW, GOALS_VIEW, HABITS_VIEW, PRODUCTIVITY_VIEW, POMODORO_VIEW, WEEKLY_VIEW, DAILY_VIEW, SETTINGS_VIEW
+    from app.views.unified_activities_view import UnifiedActivitiesView
+    from app.resources import get_icon, get_pixmap, VIEW_NAMES, DASHBOARD_VIEW, ACTIVITIES_VIEW, GOALS_VIEW, PRODUCTIVITY_VIEW, POMODORO_VIEW, WEEKLY_VIEW, DAILY_VIEW, SETTINGS_VIEW
 else:
     # Normal imports when imported as a module
     from app.models.database import initialize_db
     from app.models.database_manager import get_manager, close_connection
-    from app.views.calendar_widget import ModernCalendarWidget
-    from app.views.task_widget import TaskWidget
+    from app.views.calendar_widget import ModernCalendarWidget, CalendarWithEventList
+    from app.views.task_widget import TaskWidget, BaseTaskDialog, TaskDialog
     from app.views.goal_widget import GoalWidget
-    from app.views.habit_widget import HabitWidget
     from app.views.productivity_view import ProductivityView
     from app.views.pomodoro_widget import PomodoroWidget
     from app.views.weekly_view import WeeklyView
     from app.views.daily_view import DailyView
     from app.views.settings_dialog import SettingsDialog
-    from app.views.task_list_view import TaskListView
-    from app.resources import get_icon, get_pixmap, VIEW_NAMES, DASHBOARD_VIEW, TASKS_VIEW, GOALS_VIEW, HABITS_VIEW, PRODUCTIVITY_VIEW, POMODORO_VIEW, WEEKLY_VIEW, DAILY_VIEW, SETTINGS_VIEW
+    from app.views.unified_activities_view import UnifiedActivitiesView
+    from app.resources import get_icon, get_pixmap, VIEW_NAMES, DASHBOARD_VIEW, ACTIVITIES_VIEW, GOALS_VIEW, PRODUCTIVITY_VIEW, POMODORO_VIEW, WEEKLY_VIEW, DAILY_VIEW, SETTINGS_VIEW
+
+# Import custom progress chart to avoid QRectF issues
+from app.views.custom_progress import CircularProgressChart
+
+# Import model classes
+from app.models.task import Task, TaskStatus
+from app.models.event import Event
+from app.models.habit import Habit
+from app.models.category import Category
+
+# Import view and dialog classes
+from app.views.event_widget import EventWidget, EventDialog
+from app.views.habit_widget import HabitWidget, HabitDialog
+from app.views.category_widget import CategoryWidget, CategoryDialog
+
+# Import database utilities
+from app.utils.db_utils import (
+    create_tables, get_db_path, backup_database, restore_database
+)
 
 class TaskTitanApp(QMainWindow):
     """Main application window for TaskTitan with modern UI.""" 
@@ -65,7 +88,7 @@ class TaskTitanApp(QMainWindow):
         
         # Set up window properties
         self.setWindowTitle("TaskTitan")
-        self.setMinimumSize(1000, 700)
+        self.setMinimumSize(1200, 800)
         
         # Create central widget and main layout
         self.central_widget = QWidget()
@@ -74,9 +97,12 @@ class TaskTitanApp(QMainWindow):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
         
+        # Current view tracking
+        self.current_page = DASHBOARD_VIEW
+        
         # Setup the UI components
         self.setupSidebar()
-        self.setupUI()
+        self.setupContentStack()
         
         # Load initial data
         self.loadData()
@@ -107,211 +133,349 @@ class TaskTitanApp(QMainWindow):
     def savePendingChanges(self):
         """Save any pending changes before closing."""
         try:
+            # Make sure activities view explicitly saves its data
+            if hasattr(self, 'activitiesView') and hasattr(self.activitiesView, 'saveChanges'):
+                print("Saving activities before exit...")
+                self.activitiesView.saveChanges()
+            
             # Save any unsaved data in the current view
-            current_widget = self.stacked_widget.currentWidget()
+            current_widget = self.contentStack.currentWidget()
             if hasattr(current_widget, 'saveChanges'):
                 print(f"Saving changes for {current_widget.__class__.__name__}")
                 current_widget.saveChanges()
             
             # Loop through all views to save any pending changes
-            for i in range(self.stacked_widget.count()):
-                widget = self.stacked_widget.widget(i)
+            for i in range(self.contentStack.count()):
+                widget = self.contentStack.widget(i)
                 if widget != current_widget and hasattr(widget, 'saveChanges'):
                     print(f"Saving changes for {widget.__class__.__name__}")
                     widget.saveChanges()
+                    
+            # Ensure database commits all changes
+            if hasattr(self, 'conn'):
+                self.conn.commit()
+                
         except Exception as e:
             print(f"Error saving pending changes: {e}")
 
-    def setupUI(self):
-        """Set up the main UI components."""
-        # Create the content widget that will contain the stacked views
-        self.content_widget = QWidget()
-        self.content_layout = QVBoxLayout(self.content_widget)
-        self.content_layout.setContentsMargins(10, 10, 10, 10)
-        self.content_layout.setSpacing(10)
-        
-        # Add content widget to main layout
-        self.main_layout.addWidget(self.content_widget)
-        
-        # Create a toolbar for common actions
-        self.setupToolbar()
-        
-        # Create a stacked widget to hold different views
-        self.stacked_widget = QStackedWidget()
-        self.content_layout.addWidget(self.stacked_widget)
-        
-        # Create and add views to the stacked widget
-        self.dashboard_view = QWidget()  # Placeholder for dashboard
-        self.setupDashboard()
-        self.stacked_widget.addWidget(self.dashboard_view)
-        
-        self.tasks_view = TaskListView(self)
-        self.stacked_widget.addWidget(self.tasks_view)
-        
-        self.goals_view = GoalWidget(self)
-        self.stacked_widget.addWidget(self.goals_view)
-        
-        self.habits_view = HabitWidget(self)
-        self.stacked_widget.addWidget(self.habits_view)
-        
-        self.productivity_view = ProductivityView(self)
-        self.stacked_widget.addWidget(self.productivity_view)
-        
-        self.pomodoro_view = PomodoroWidget(self)
-        self.stacked_widget.addWidget(self.pomodoro_view)
-        
-        self.weekly_view = WeeklyView(self)
-        self.stacked_widget.addWidget(self.weekly_view)
-        
-        self.daily_view = DailyView(self)
-        self.stacked_widget.addWidget(self.daily_view)
-        
-        # Set initial view
-        self.stacked_widget.setCurrentIndex(DASHBOARD_VIEW)
-
-    # Add stubs for other required methods
-    def setupSidebar(self):
-        """Create sidebar for navigation."""
-        # Create sidebar container
-        self.sidebar = QFrame()
-        self.sidebar.setObjectName("sidebar")
-        self.sidebar.setStyleSheet("""
-            #sidebar {
-                background-color: #1E293B;
-                min-width: 200px;
-                max-width: 200px;
+    def setupContentStack(self):
+        """Create the stacked content area."""
+        # Create a stacked widget for content
+        self.contentStack = QStackedWidget()
+        self.contentStack.setObjectName("contentStack")
+        self.contentStack.setStyleSheet("""
+            #contentStack {
+                background-color: #F8FAFC;
             }
-            
+        """)
+        
+        # Dashboard view
+        self.dashboardView = QWidget()
+        self.dashboardView.setObjectName("dashboardPage")
+        dashboard_layout = QVBoxLayout(self.dashboardView)
+        
+        # Dashboard header
+        dashboard_header = QWidget()
+        dashboard_header_layout = QHBoxLayout(dashboard_header)
+        dashboard_header_layout.setContentsMargins(30, 30, 30, 0)
+        
+        dashboard_title = QLabel("Dashboard")
+        dashboard_title.setStyleSheet("font-size: 28px; font-weight: bold; color: #1E293B;")
+        dashboard_header_layout.addWidget(dashboard_title)
+        dashboard_header_layout.addStretch()
+        
+        # Add greeting based on time of day
+        current_hour = QTime.currentTime().hour()
+        greeting = "Good morning" if 5 <= current_hour < 12 else "Good afternoon" if 12 <= current_hour < 18 else "Good evening"
+        greeting_label = QLabel(f"{greeting}, {getpass.getuser()}!")
+        greeting_label.setStyleSheet("font-size: 18px; color: #64748B;")
+        dashboard_header_layout.addWidget(greeting_label)
+        
+        dashboard_layout.addWidget(dashboard_header)
+        
+        # Dashboard content
+        dashboard_content = QWidget()
+        dashboard_content_layout = QGridLayout(dashboard_content)
+        dashboard_content_layout.setContentsMargins(20, 20, 20, 20)
+        dashboard_content_layout.setSpacing(20)
+        
+        # Create dashboard widgets
+        self.setupDashboardWidgets(dashboard_content_layout)
+        
+        dashboard_layout.addWidget(dashboard_content)
+        self.contentStack.addWidget(self.dashboardView)
+        
+        # Activities view (unified view for tasks, events, and habits)
+        self.activitiesView = UnifiedActivitiesView(self)
+        self.contentStack.addWidget(self.activitiesView)
+        
+        # Connect the signals from the activities view
+        self.activitiesView.activityAdded.connect(self.onActivityAdded)
+        self.activitiesView.activityCompleted.connect(self.onActivityCompleted)
+        self.activitiesView.activityDeleted.connect(self.onActivityDeleted)
+        
+        # Goals view
+        self.goalsView = QWidget()
+        self.goalsView.setObjectName("goalsPage")
+        goals_layout = QVBoxLayout(self.goalsView)
+        
+        # Goals header
+        goals_header = QWidget()
+        goals_header_layout = QHBoxLayout(goals_header)
+        goals_header_layout.setContentsMargins(30, 30, 30, 20)
+        
+        goals_title = QLabel("Goals & Objectives")
+        goals_title.setStyleSheet("font-size: 28px; font-weight: bold; color: #1E293B;")
+        goals_header_layout.addWidget(goals_title)
+        goals_header_layout.addStretch()
+        
+        add_goal_btn = QPushButton("+ New Goal")
+        add_goal_btn.setStyleSheet("""
             QPushButton {
-                background-color: transparent;
-                color: #CBD5E1;
-                text-align: left;
-                padding: 12px 15px;
-                border: none;
-                font-size: 14px;
-                border-radius: 0px;
-            }
-            
-            QPushButton:hover {
-                background-color: #334155;
-            }
-            
-            QPushButton:checked {
-                background-color: #334155;
-                border-left: 4px solid #6366F1;
+                background-color: #6366F1;
                 color: white;
+                border: none;
+                padding: 10px 16px;
+                border-radius: 8px;
                 font-weight: bold;
             }
+            QPushButton:hover {
+                background-color: #4F46E5;
+            }
         """)
+        goals_header_layout.addWidget(add_goal_btn)
         
-        # Create sidebar layout
-        self.sidebar_layout = QVBoxLayout(self.sidebar)
-        self.sidebar_layout.setContentsMargins(0, 20, 0, 20)
-        self.sidebar_layout.setSpacing(0)
+        goals_layout.addWidget(goals_header)
         
-        # App title
-        self.app_title = QLabel("TaskTitan")
-        self.app_title.setStyleSheet("""
-            color: white; 
-            font-size: 18px; 
+        # Goals content - placeholder for now
+        goals_content = QLabel("Goals feature coming soon...")
+        goals_content.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        goals_content.setStyleSheet("font-size: 16px; color: #64748B; padding: 40px;")
+        goals_layout.addWidget(goals_content)
+        
+        self.contentStack.addWidget(self.goalsView)
+        
+        # Pomodoro view
+        self.pomodoroView = PomodoroWidget(self)
+        self.contentStack.addWidget(self.pomodoroView)
+        
+        # Settings view
+        self.settingsView = QWidget()
+        self.settingsView.setObjectName("settingsPage")
+        settings_layout = QVBoxLayout(self.settingsView)
+        
+        # Settings header
+        settings_header = QWidget()
+        settings_header_layout = QHBoxLayout(settings_header)
+        settings_header_layout.setContentsMargins(30, 30, 30, 20)
+        
+        settings_title = QLabel("Settings")
+        settings_title.setStyleSheet("font-size: 28px; font-weight: bold; color: #1E293B;")
+        settings_header_layout.addWidget(settings_title)
+        
+        settings_layout.addWidget(settings_header)
+        
+        # Settings form
+        settings_form = QWidget()
+        form_layout = QFormLayout(settings_form)
+        form_layout.setContentsMargins(30, 10, 30, 30)
+        form_layout.setSpacing(20)
+        
+        # Theme selection
+        theme_combo = QComboBox()
+        theme_combo.addItems(["Light", "Dark", "System"])
+        form_layout.addRow("Theme:", theme_combo)
+        
+        # Notification settings
+        notification_check = QCheckBox("Enable notifications")
+        notification_check.setChecked(True)
+        form_layout.addRow("Notifications:", notification_check)
+        
+        # Save button
+        save_btn = QPushButton("Save Settings")
+        save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6366F1;
+                color: white;
+                border: none;
+                padding: 10px 16px;
+                border-radius: 8px;
+                font-weight: bold;
+                min-width: 120px;
+            }
+            QPushButton:hover {
+                background-color: #4F46E5;
+            }
+        """)
+        form_layout.addRow("", save_btn)
+        
+        settings_layout.addWidget(settings_form)
+        settings_layout.addStretch()
+        
+        self.contentStack.addWidget(self.settingsView)
+        
+        # Add to main layout
+        self.main_layout.addWidget(self.contentStack, 1)
+
+    def setupSidebar(self):
+        """Set up the sidebar navigation."""
+        # Create sidebar container
+        sidebar = QWidget()
+        sidebar.setObjectName("sidebar")
+        sidebar.setStyleSheet("""
+            #sidebar {
+                background-color: #2E3440;
+                border-right: 1px solid #3B4252;
+                min-width: 220px;
+                max-width: 220px;
+            }
+        """)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_layout.setSpacing(0)
+
+        # Logo container
+        logo_container = QWidget()
+        logo_container.setFixedHeight(80)
+        logo_layout = QHBoxLayout(logo_container)
+        logo_layout.setContentsMargins(20, 10, 20, 10)
+        
+        # Logo label with text (replace with actual logo when available)
+        logo_label = QLabel("TaskTitan")
+        logo_label.setStyleSheet("""
+            font-size: 24px;
             font-weight: bold;
-            padding: 10px 15px;
-            margin-bottom: 20px;
+            color: #88C0D0;
         """)
-        self.sidebar_layout.addWidget(self.app_title)
+        logo_layout.addWidget(logo_label)
+        sidebar_layout.addWidget(logo_container)
+        
+        # Add a separator line
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setStyleSheet("background-color: #3B4252; margin: 0 10px;")
+        separator.setFixedHeight(1)
+        sidebar_layout.addWidget(separator)
+
+        # Scrollable area for navigation categories
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        # Navigation container
+        nav_container = QWidget()
+        nav_layout = QVBoxLayout(nav_container)
+        nav_layout.setContentsMargins(10, 20, 10, 20)
+        nav_layout.setSpacing(10)
+        
+        # Button style
+        button_style = """
+            QPushButton {
+                text-align: left;
+                padding: 12px 15px;
+                border-radius: 8px;
+                font-size: 15px;
+                font-weight: medium;
+                color: #ECEFF4;
+                background-color: transparent;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #3B4252;
+            }
+            QPushButton:checked {
+                background-color: #5E81AC;
+                color: #ECEFF4;
+            }
+            QPushButton:checked:hover {
+                background-color: #5E81AC;
+            }
+        """
         
         # Navigation buttons
-        self.sidebarButtons = []
+        self.nav_buttons = []
         
         # Dashboard button
-        self.dashboard_btn = QPushButton("Dashboard")
-        self.dashboard_btn.setIcon(get_icon("dashboard"))
-        self.dashboard_btn.setIconSize(QSize(20, 20))
-        self.dashboard_btn.setCheckable(True)
-        self.dashboard_btn.setChecked(True)
-        self.dashboard_btn.clicked.connect(lambda: self.changePage(DASHBOARD_VIEW))
-        self.sidebar_layout.addWidget(self.dashboard_btn)
-        self.sidebarButtons.append(self.dashboard_btn)
+        dashboard_btn = QPushButton("Dashboard")
+        dashboard_btn.setIcon(QIcon("assets/icons/dashboard.png"))
+        dashboard_btn.setIconSize(QSize(20, 20))
+        dashboard_btn.setCheckable(True)
+        dashboard_btn.setStyleSheet(button_style)
+        dashboard_btn.clicked.connect(lambda: self.switchView(DASHBOARD_VIEW, dashboard_btn))
+        nav_layout.addWidget(dashboard_btn)
+        self.nav_buttons.append(dashboard_btn)
         
-        # Tasks button
-        self.tasks_btn = QPushButton("Tasks")
-        self.tasks_btn.setIcon(get_icon("task"))
-        self.tasks_btn.setIconSize(QSize(20, 20))
-        self.tasks_btn.setCheckable(True)
-        self.tasks_btn.clicked.connect(lambda: self.changePage(TASKS_VIEW))
-        self.sidebar_layout.addWidget(self.tasks_btn)
-        self.sidebarButtons.append(self.tasks_btn)
+        # Activities button (unified)
+        activities_btn = QPushButton("Activities")
+        activities_btn.setIcon(QIcon("assets/icons/activities.png"))
+        activities_btn.setIconSize(QSize(20, 20))
+        activities_btn.setCheckable(True)
+        activities_btn.setStyleSheet(button_style)
+        activities_btn.clicked.connect(lambda: self.switchView(ACTIVITIES_VIEW, activities_btn))
+        nav_layout.addWidget(activities_btn)
+        self.nav_buttons.append(activities_btn)
         
         # Goals button
-        self.goals_btn = QPushButton("Goals")
-        self.goals_btn.setIcon(get_icon("goal"))
-        self.goals_btn.setIconSize(QSize(20, 20))
-        self.goals_btn.setCheckable(True)
-        self.goals_btn.clicked.connect(lambda: self.changePage(GOALS_VIEW))
-        self.sidebar_layout.addWidget(self.goals_btn)
-        self.sidebarButtons.append(self.goals_btn)
-        
-        # Habits button
-        self.habits_btn = QPushButton("Habits")
-        self.habits_btn.setIcon(get_icon("habit"))
-        self.habits_btn.setIconSize(QSize(20, 20))
-        self.habits_btn.setCheckable(True)
-        self.habits_btn.clicked.connect(lambda: self.changePage(HABITS_VIEW))
-        self.sidebar_layout.addWidget(self.habits_btn)
-        self.sidebarButtons.append(self.habits_btn)
-        
-        # Productivity button
-        self.productivity_btn = QPushButton("Productivity")
-        self.productivity_btn.setIcon(get_icon("productivity"))
-        self.productivity_btn.setIconSize(QSize(20, 20))
-        self.productivity_btn.setCheckable(True)
-        self.productivity_btn.clicked.connect(lambda: self.changePage(PRODUCTIVITY_VIEW))
-        self.sidebar_layout.addWidget(self.productivity_btn)
-        self.sidebarButtons.append(self.productivity_btn)
+        goals_btn = QPushButton("Goals")
+        goals_btn.setIcon(QIcon("assets/icons/goals.png"))
+        goals_btn.setIconSize(QSize(20, 20))
+        goals_btn.setCheckable(True)
+        goals_btn.setStyleSheet(button_style)
+        goals_btn.clicked.connect(lambda: self.switchView(GOALS_VIEW, goals_btn))
+        nav_layout.addWidget(goals_btn)
+        self.nav_buttons.append(goals_btn)
         
         # Pomodoro button
-        self.pomodoro_btn = QPushButton("Pomodoro")
-        self.pomodoro_btn.setIcon(get_icon("pomodoro"))
-        self.pomodoro_btn.setIconSize(QSize(20, 20))
-        self.pomodoro_btn.setCheckable(True)
-        self.pomodoro_btn.clicked.connect(lambda: self.changePage(POMODORO_VIEW))
-        self.sidebar_layout.addWidget(self.pomodoro_btn)
-        self.sidebarButtons.append(self.pomodoro_btn)
+        pomodoro_btn = QPushButton("Pomodoro")
+        pomodoro_btn.setIcon(QIcon("assets/icons/pomodoro.png"))
+        pomodoro_btn.setIconSize(QSize(20, 20))
+        pomodoro_btn.setCheckable(True)
+        pomodoro_btn.setStyleSheet(button_style)
+        pomodoro_btn.clicked.connect(lambda: self.switchView(POMODORO_VIEW, pomodoro_btn))
+        nav_layout.addWidget(pomodoro_btn)
+        self.nav_buttons.append(pomodoro_btn)
         
-        # Weekly View button
-        self.weekly_btn = QPushButton("Weekly View")
-        self.weekly_btn.setIcon(get_icon("calendar"))
-        self.weekly_btn.setIconSize(QSize(20, 20))
-        self.weekly_btn.setCheckable(True)
-        self.weekly_btn.clicked.connect(lambda: self.changePage(WEEKLY_VIEW))
-        self.sidebar_layout.addWidget(self.weekly_btn)
-        self.sidebarButtons.append(self.weekly_btn)
-        
-        # Daily View button
-        self.daily_btn = QPushButton("Daily View")
-        self.daily_btn.setIcon(get_icon("calendar-day"))
-        self.daily_btn.setIconSize(QSize(20, 20))
-        self.daily_btn.setCheckable(True)
-        self.daily_btn.clicked.connect(lambda: self.changePage(DAILY_VIEW))
-        self.sidebar_layout.addWidget(self.daily_btn)
-        self.sidebarButtons.append(self.daily_btn)
-        
-        # Add spacer to push the settings button to the bottom
-        self.sidebar_layout.addStretch()
+        # Add spacing
+        nav_layout.addSpacerItem(QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
         
         # Settings button
-        self.settings_btn = QPushButton("Settings")
-        self.settings_btn.setIcon(get_icon("settings"))
-        self.settings_btn.setIconSize(QSize(20, 20))
-        self.settings_btn.clicked.connect(self.openSettings)
-        self.sidebar_layout.addWidget(self.settings_btn)
+        settings_btn = QPushButton("Settings")
+        settings_btn.setIcon(QIcon("assets/icons/settings.png"))
+        settings_btn.setIconSize(QSize(20, 20))
+        settings_btn.setCheckable(True)
+        settings_btn.setStyleSheet(button_style)
+        settings_btn.clicked.connect(lambda: self.switchView(SETTINGS_VIEW, settings_btn))
+        nav_layout.addWidget(settings_btn)
+        self.nav_buttons.append(settings_btn)
+        
+        scroll_area.setWidget(nav_container)
+        sidebar_layout.addWidget(scroll_area)
         
         # Add sidebar to main layout
-        self.main_layout.addWidget(self.sidebar)
-    
+        self.main_layout.addWidget(sidebar)
+        
+        # Set default active button
+        dashboard_btn.setChecked(True)
+
     def setupDashboard(self):
-        """Set up the dashboard view."""
-        dashboard_layout = QVBoxLayout(self.dashboard_view)
+        """Create a modern dashboard view with widgets."""
+        # Create a scrollable dashboard
+        self.dashboard_view = QWidget()
+        
+        # Create a scroll area to make dashboard scrollable
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        
+        # Create the container widget for the scrollable content
+        dashboard_container = QWidget()
+        dashboard_container.setStyleSheet("""
+            background-color: #F8FAFC;
+            border-radius: 12px;
+        """)
+        dashboard_layout = QVBoxLayout(dashboard_container)
+        dashboard_layout.setContentsMargins(20, 20, 20, 20)
         dashboard_layout.setSpacing(20)
         
         # Welcome header
@@ -332,13 +496,13 @@ class TaskTitanApp(QMainWindow):
         stats_grid = QGridLayout()
         stats_grid.setSpacing(10)
         
-        # Tasks stats
-        tasks_label = QLabel("Tasks")
-        tasks_label.setStyleSheet("font-weight: bold;")
-        stats_grid.addWidget(tasks_label, 0, 0)
+        # Activities stats
+        activities_label = QLabel("Activities")
+        activities_label.setStyleSheet("font-weight: bold;")
+        stats_grid.addWidget(activities_label, 0, 0)
         
-        self.tasks_counter = QLabel("0/0")
-        stats_grid.addWidget(self.tasks_counter, 0, 1)
+        self.activities_counter = QLabel("0/0")
+        stats_grid.addWidget(self.activities_counter, 0, 1)
         
         # Goals stats
         goals_label = QLabel("Goals")
@@ -347,14 +511,6 @@ class TaskTitanApp(QMainWindow):
         
         self.goals_counter = QLabel("0/0")
         stats_grid.addWidget(self.goals_counter, 1, 1)
-        
-        # Habits stats
-        habits_label = QLabel("Habits")
-        habits_label.setStyleSheet("font-weight: bold;")
-        stats_grid.addWidget(habits_label, 2, 0)
-        
-        self.habits_counter = QLabel("0/0")
-        stats_grid.addWidget(self.habits_counter, 2, 1)
         
         summary_layout.addLayout(stats_grid)
         dashboard_layout.addWidget(summary_frame)
@@ -371,6 +527,11 @@ class TaskTitanApp(QMainWindow):
         # Buttons for quick access
         buttons_layout = QHBoxLayout()
         
+        activities_btn = QPushButton("Activities")
+        activities_btn.setIcon(get_icon("tasks"))
+        activities_btn.clicked.connect(lambda: self.changePage(ACTIVITIES_VIEW))
+        buttons_layout.addWidget(activities_btn)
+        
         daily_btn = QPushButton("Daily View")
         daily_btn.setIcon(get_icon("calendar-day"))
         daily_btn.clicked.connect(lambda: self.changePage(DAILY_VIEW))
@@ -381,79 +542,179 @@ class TaskTitanApp(QMainWindow):
         weekly_btn.clicked.connect(lambda: self.changePage(WEEKLY_VIEW))
         buttons_layout.addWidget(weekly_btn)
         
-        pomodoro_btn = QPushButton("Pomodoro")
-        pomodoro_btn.setIcon(get_icon("pomodoro"))
-        pomodoro_btn.clicked.connect(lambda: self.changePage(POMODORO_VIEW))
-        buttons_layout.addWidget(pomodoro_btn)
-        
         quick_access_layout.addLayout(buttons_layout)
         dashboard_layout.addWidget(quick_access_frame)
+        
+        # Add quick action buttons in header
+        quick_add_btn = QPushButton("+ Add Activity")
+        quick_add_btn.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                color: #6366F1;
+                font-weight: bold;
+                padding: 8px 16px;
+                border-radius: 8px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #F3F4F6;
+            }
+        """)
+        quick_add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        # Create a menu for the button
+        quick_add_menu = QMenu(self)
+        quick_add_menu.setStyleSheet("""
+            QMenu {
+                background-color: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 8px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #EEF2FF;
+                color: #4F46E5;
+            }
+        """)
+        
+        # Add menu actions
+        add_task_action = QAction("Add Task", self)
+        add_task_action.triggered.connect(lambda: self.addActivity('task'))
+        quick_add_menu.addAction(add_task_action)
+        
+        add_event_action = QAction("Add Event", self)
+        add_event_action.triggered.connect(lambda: self.addActivity('event'))
+        quick_add_menu.addAction(add_event_action)
+        
+        add_habit_action = QAction("Add Habit", self)
+        add_habit_action.triggered.connect(lambda: self.addActivity('habit'))
+        quick_add_menu.addAction(add_habit_action)
+        
+        # Set the menu for the button
+        quick_add_btn.setMenu(quick_add_menu)
+        dashboard_layout.addWidget(quick_add_btn)
         
         # Add stretch to push everything to the top
         dashboard_layout.addStretch()
         
+        # Set up the dashboard
+        scroll_area.setWidget(dashboard_container)
+        
+        # Add the scroll area to the dashboard view layout
+        dashboard_view_layout = QVBoxLayout(self.dashboard_view)
+        dashboard_view_layout.setContentsMargins(0, 0, 0, 0)
+        dashboard_view_layout.addWidget(scroll_area)
+        
+        # Add the dashboard view to the content stack
+        self.content_stack.addWidget(self.dashboard_view)
+
     def setupToolbar(self):
-        """Set up the application toolbar."""
+        """Set up the toolbar with user options and actions."""
         self.toolbar = QToolBar()
         self.toolbar.setMovable(False)
-        self.toolbar.setIconSize(QSize(24, 24))
+        self.toolbar.setIconSize(QSize(20, 20))
         self.toolbar.setStyleSheet("""
             QToolBar {
-                background-color: #F8FAFC;
-                border-bottom: 1px solid #E2E8F0;
                 spacing: 10px;
-                padding: 5px 10px;
+                background-color: #FFFFFF;
+                border-bottom: 1px solid #E5E7EB;
             }
-            
             QToolButton {
-                border-radius: 6px;
+                background-color: transparent;
+                border: none;
+                border-radius: 4px;
                 padding: 5px;
             }
-            
             QToolButton:hover {
-                background-color: #E2E8F0;
+                background-color: #F3F4F6;
+            }
+            QToolButton:pressed {
+                background-color: #E5E7EB;
             }
         """)
         
-        # Add actions
-        add_task_action = QAction(get_icon("add"), "Add Task", self)
-        add_task_action.triggered.connect(self.addTask)
-        self.toolbar.addAction(add_task_action)
+        # Activities button - go directly to activities view
+        activities_action = QAction(get_icon("tasks"), "Activities", self)
+        activities_action.triggered.connect(self.openActivitiesView)
+        self.toolbar.addAction(activities_action)
         
-        add_event_action = QAction(get_icon("event"), "Add Event", self)
-        add_event_action.triggered.connect(self.addEvent)
-        self.toolbar.addAction(add_event_action)
+        # Spacer to push actions to the right
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.toolbar.addWidget(spacer)
         
-        self.toolbar.addSeparator()
+        # Add activities dropdown
+        add_menu = QMenu(self)
+        add_menu.setStyleSheet("""
+            QMenu {
+                background-color: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 8px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #EEF2FF;
+                color: #4F46E5;
+            }
+        """)
         
-        refresh_action = QAction(get_icon("refresh"), "Refresh", self)
-        refresh_action.triggered.connect(self.refreshData)
-        self.toolbar.addAction(refresh_action)
+        add_task_action = QAction("Add Task", self)
+        add_task_action.triggered.connect(lambda: self.addActivity('task'))
+        add_menu.addAction(add_task_action)
         
-        # Add a diagnostics button (will be hidden in production)
-        self.toolbar.addSeparator()
-        diagnose_action = QAction(get_icon("settings"), "Database Diagnostics", self)
-        diagnose_action.triggered.connect(self.runDatabaseDiagnostics)
-        self.toolbar.addAction(diagnose_action)
+        add_event_action = QAction("Add Event", self)
+        add_event_action.triggered.connect(lambda: self.addActivity('event'))
+        add_menu.addAction(add_event_action)
         
-        # Add the toolbar to the content layout
-        self.content_layout.insertWidget(0, self.toolbar)
+        add_habit_action = QAction("Add Habit", self)
+        add_habit_action.triggered.connect(lambda: self.addActivity('habit'))
+        add_menu.addAction(add_habit_action)
         
+        add_button = QAction(get_icon("add"), "Add Activity", self)
+        add_button.setMenu(add_menu)
+        self.toolbar.addAction(add_button)
+        
+        # Search action
+        search_action = QAction(get_icon("search"), "Search", self)
+        search_action.triggered.connect(self.openSearchDialog)
+        self.toolbar.addAction(search_action)
+        
+        # User menu action
+        self.user_action = QAction(get_icon("user"), "User", self)
+        self.user_action.triggered.connect(self.showUserMenu)
+        self.toolbar.addAction(self.user_action)
+        
+        self.addToolBar(self.toolbar)
+
     def changePage(self, index):
-        """Change the current page in the stacked widget.
+        """Change to a different page in the application."""
+        # Unselect the current page button
+        self.nav_buttons[self.current_page].setChecked(False)
+        self.nav_buttons[self.current_page].style().unpolish(self.nav_buttons[self.current_page])
+        self.nav_buttons[self.current_page].style().polish(self.nav_buttons[self.current_page])
         
-        Args:
-            index (int): The index of the page to show
-        """
-        # Update the checked state of sidebar buttons
-        for i, button in enumerate(self.sidebarButtons):
-            button.setChecked(i == index)
+        # Select the new page button
+        self.nav_buttons[index].setChecked(True)
+        self.nav_buttons[index].style().unpolish(self.nav_buttons[index])
+        self.nav_buttons[index].style().polish(self.nav_buttons[index])
         
-        # Change the page
-        self.stacked_widget.setCurrentIndex(index)
-        
+        # Change the stack widget to show the selected page
+        self.contentStack.setCurrentIndex(index)
+        self.current_page = index
+
     def loadData(self):
         """Load initial data for the application."""
+        # Initialize the activities view data
+        self.activitiesView.loadActivities()
+        
         # This would load data from the database for all views
         # For now, just update the dashboard counters
         self.refreshData()
@@ -461,23 +722,29 @@ class TaskTitanApp(QMainWindow):
     def refreshData(self):
         """Refresh data periodically."""
         try:
-            # Use the database manager to get counts
-            total_tasks = self.db_manager.count_items('tasks')
-            completed_tasks = self.db_manager.count_items('tasks', completed=True)
-            self.tasks_counter.setText(f"{completed_tasks}/{total_tasks}")
+            # Use the database manager to get counts for activities
+            # For a real implementation, this would query the unified activities table
+            # with different type filters
             
+            # Count all activities
+            total_activities = 0
+            completed_activities = 0
+            
+            # In our sample implementation we'll get data from the activities_view
+            for activity_type, activities in self.activitiesView.activities.items():
+                total_activities += len(activities)
+                completed_activities += sum(1 for a in activities if a.get('completed', False))
+            
+            self.activities_counter.setText(f"{completed_activities}/{total_activities}")
+            
+            # Count goals (unchanged)
             total_goals = self.db_manager.count_items('goals')
             completed_goals = self.db_manager.count_items('goals', completed=True)
             self.goals_counter.setText(f"{completed_goals}/{total_goals}")
             
-            # Count habits for today
-            today = datetime.now().strftime("%Y-%m-%d")
-            completed_habits, total_habits = self.db_manager.count_habits_completion(today)
-            self.habits_counter.setText(f"{completed_habits}/{total_habits}")
-            
             # Refresh all views
-            for i in range(self.stacked_widget.count()):
-                widget = self.stacked_widget.widget(i)
+            for i in range(self.contentStack.count()):
+                widget = self.contentStack.widget(i)
                 if hasattr(widget, 'refresh'):
                     widget.refresh()
                     
@@ -488,15 +755,15 @@ class TaskTitanApp(QMainWindow):
         """Open dialog to add a new task."""
         try:
             # Check if we are already on the tasks view
-            if self.stacked_widget.currentIndex() != TASKS_VIEW:
-                # Change to the tasks view first
-                self.changePage(TASKS_VIEW)
+            if self.contentStack.currentIndex() != ACTIVITIES_VIEW:
+                # Change to the activities view first
+                self.changePage(ACTIVITIES_VIEW)
             
             # Call the show add task dialog method on the task view
-            if hasattr(self.tasks_view, 'showAddTaskDialog'):
-                self.tasks_view.showAddTaskDialog()
+            if hasattr(self.activitiesView, 'showAddActivityDialog'):
+                self.activitiesView.showAddActivityDialog('task')
             else:
-                print("Error: tasks_view does not have showAddTaskDialog method")
+                print("Error: activitiesView does not have showAddActivityDialog method")
                 QMessageBox.warning(self, "Error", "Could not open the add task dialog")
         except Exception as e:
             print(f"Error showing add task dialog: {e}")
@@ -607,3 +874,44 @@ class TaskTitanApp(QMainWindow):
                 
         except Exception as e:
             QMessageBox.critical(self, "Fix Error", f"Error fixing database: {str(e)}")
+
+    def addActivity(self, activity_type='task'):
+        """Open dialog to add a new activity."""
+        # Change to the activities view first
+        self.changePage(ACTIVITIES_VIEW)
+        
+        # Then show the add dialog for the specified activity type
+        self.activitiesView.showAddActivityDialog(activity_type)
+
+    def openActivitiesView(self):
+        """Show the unified activities view."""
+        self.changePage(ACTIVITIES_VIEW)
+
+    def switchView(self, index, button=None):
+        """Switch between different views in the content stack."""
+        # Update the content stack index
+        self.contentStack.setCurrentIndex(index)
+        
+        # Update button states
+        if button:
+            # Uncheck all buttons first
+            for btn in self.nav_buttons:
+                if btn != button:
+                    btn.setChecked(False)
+            # Check the active button
+            button.setChecked(True)
+            
+    def onActivityAdded(self, activity):
+        """Handle when a new activity is added."""
+        # Refresh the dashboard counters
+        self.refreshData()
+        
+    def onActivityCompleted(self, activity_id, activity_type):
+        """Handle when an activity is marked as completed."""
+        # Refresh the dashboard counters
+        self.refreshData()
+        
+    def onActivityDeleted(self, activity_id, activity_type):
+        """Handle when an activity is deleted."""
+        # Refresh the dashboard counters
+        self.refreshData()

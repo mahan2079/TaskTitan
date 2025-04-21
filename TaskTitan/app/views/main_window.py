@@ -12,19 +12,19 @@ from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor, QFont, QPainter, QBrush
 import darkdetect
 import pyqtgraph as pg
 import sqlite3
+import logging
 
 from app.models.database import initialize_db
+from app.models.database_manager import get_manager, close_connection
 from app.views.calendar_widget import ModernCalendarWidget, CalendarWithEventList
-from app.views.task_widget import TaskWidget
+from app.views.unified_activities_widget import UnifiedActivitiesWidget
 from app.views.goal_widget import GoalWidget
-from app.views.habit_widget import HabitWidget
 from app.views.productivity_view import ProductivityView
 from app.views.pomodoro_widget import PomodoroWidget
 from app.views.weekly_view import WeeklyView
 from app.views.daily_view import DailyView
 from app.views.settings_dialog import SettingsDialog
-from app.views.task_list_view import TaskListView
-from app.resources import get_icon, get_pixmap, VIEW_NAMES, DASHBOARD_VIEW, TASKS_VIEW, GOALS_VIEW, HABITS_VIEW, PRODUCTIVITY_VIEW, POMODORO_VIEW, WEEKLY_VIEW, DAILY_VIEW, SETTINGS_VIEW
+from app.resources import get_icon, get_pixmap, VIEW_NAMES, DASHBOARD_VIEW, ACTIVITIES_VIEW, GOALS_VIEW, PRODUCTIVITY_VIEW, POMODORO_VIEW, WEEKLY_VIEW, DAILY_VIEW, SETTINGS_VIEW
 
 # Import custom progress chart to avoid QRectF issues
 from app.views.custom_progress import CircularProgressChart
@@ -33,8 +33,24 @@ class TaskTitanApp(QMainWindow):
     """Main application window for TaskTitan with modern UI."""
     
     def __init__(self):
+        """Initialize the main application window."""
         super().__init__()
+        
+        # Initialize database connection
         self.conn, self.cursor = initialize_db()
+        
+        # Get the database manager for direct access
+        self.db_manager = get_manager()
+        
+        # Initialize activities manager
+        from app.models.activities_manager import ActivitiesManager
+        self.activities_manager = ActivitiesManager()
+        self.activities_manager.set_connection(self.conn, self.cursor)
+        
+        # Set up window properties
+        self.setWindowTitle("TaskTitan")
+        self.setMinimumSize(1200, 800)
+        
         self.setupUI()
         self.loadData()
         
@@ -67,17 +83,13 @@ class TaskTitanApp(QMainWindow):
         # Create the dashboard page
         self.setupDashboard()
         
-        # Create tasks page
-        self.tasks_view = TaskListView(self)
-        self.content_stack.addWidget(self.tasks_view)
+        # Create activities page (unified view for tasks, events, habits)
+        self.activities_view = UnifiedActivitiesWidget(self)
+        self.content_stack.addWidget(self.activities_view)
         
         # Create goals page
         self.goals_view = GoalWidget(self)
         self.content_stack.addWidget(self.goals_view)
-        
-        # Create habits page
-        self.habits_view = HabitWidget(self)
-        self.content_stack.addWidget(self.habits_view)
         
         # Create productivity page
         self.productivity_view = ProductivityView(self)
@@ -171,9 +183,8 @@ class TaskTitanApp(QMainWindow):
         # The menu items with icons and labels
         menu_items = [
             (VIEW_NAMES[DASHBOARD_VIEW], "dashboard", DASHBOARD_VIEW),
-            (VIEW_NAMES[TASKS_VIEW], "tasks", TASKS_VIEW),
+            ("Activities", "calendar", ACTIVITIES_VIEW),
             (VIEW_NAMES[GOALS_VIEW], "goals", GOALS_VIEW),
-            (VIEW_NAMES[HABITS_VIEW], "habits", HABITS_VIEW),
             (VIEW_NAMES[PRODUCTIVITY_VIEW], "productivity", PRODUCTIVITY_VIEW),
             (VIEW_NAMES[POMODORO_VIEW], "pomodoro", POMODORO_VIEW),
             (VIEW_NAMES[WEEKLY_VIEW], "weekly", WEEKLY_VIEW),
@@ -313,7 +324,6 @@ class TaskTitanApp(QMainWindow):
         
         # Calendar widget with enhanced height
         self.dashboard_calendar = CalendarWithEventList()
-        self.dashboard_calendar.calendar.clicked.connect(self.openDailyView)
         calendar_layout.addWidget(self.dashboard_calendar)
         
         # Add legend for calendar events
@@ -519,28 +529,76 @@ class TaskTitanApp(QMainWindow):
             self.sidebarButtons[index].style().polish(self.sidebarButtons[index])
 
     def loadData(self):
-        """Load initial data for the dashboard."""
-        # Load upcoming tasks
-        self.loadUpcomingTasks()
+        """Load activities and tasks from database and update UI."""
+        logging.debug("Loading data...")
+        if hasattr(self, 'activitiesView') and self.activitiesView:
+            if hasattr(self.activitiesView, 'loadActivitiesFromDatabase'):
+                self.activitiesView.loadActivitiesFromDatabase()
+            elif hasattr(self.activitiesView, 'refresh'):
+                self.activitiesView.refresh()
         
-        # Load dashboard goals with progress wheels
-        self.loadDashboardGoals()
+        # Sync calendar with activities if both exist
+        if hasattr(self, 'dashboard_calendar') and hasattr(self, 'activities_manager'):
+            self.dashboard_calendar.sync_with_activities(self.activities_manager)
         
-        # Load statistics
-        self.loadStatistics()
+        self.refreshData()
 
     def refreshData(self):
-        """Refresh all data in the app."""
-        # Clear existing data containers
-        self.clearLayout(self.goals_wheels_container)
-        
-        # Reload data
-        self.loadData()
+        """Refresh data periodically."""
+        try:
+            # Count all activities
+            total_activities = 0
+            completed_activities = 0
+            
+            # In our sample implementation we'll get data from the activities view
+            if hasattr(self, 'activitiesView') and hasattr(self.activitiesView, 'activities'):
+                if isinstance(self.activitiesView.activities, dict):
+                    for activity_type, activities in self.activitiesView.activities.items():
+                        total_activities += len(activities)
+                        completed_activities += sum(1 for a in activities if a.get('completed', False))
+                else:
+                    # Handle the case where activities is a list
+                    total_activities = len(self.activitiesView.activities)
+                    completed_activities = sum(1 for a in self.activitiesView.activities if a.get('completed', False))
+            
+            if hasattr(self, 'activities_counter'):
+                self.activities_counter.setText(f"{completed_activities}/{total_activities}")
+            
+            # Count goals (unchanged)
+            if hasattr(self, 'db_manager') and hasattr(self, 'goals_counter'):
+                total_goals = self.db_manager.count_items('goals') 
+                completed_goals = self.db_manager.count_items('goals', completed=True)
+                self.goals_counter.setText(f"{completed_goals}/{total_goals}")
+            
+            # Refresh all views
+            if hasattr(self, 'content_stack'):
+                for i in range(self.content_stack.count()):
+                    widget = self.content_stack.widget(i)
+                    if hasattr(widget, 'refresh'):
+                        widget.refresh()
+                    
+        except Exception as e:
+            print(f"Error refreshing data: {e}")
 
-    def loadUpcomingTasks(self):
-        """Load upcoming tasks for the dashboard."""
-        # Since we've removed the tasks container, we'll skip loading upcoming tasks
-        pass
+    def loadActivities(self):
+        """Load activities data for the unified activities view."""
+        try:
+            # First, check if there are existing activities in the database
+            from app.models.activities_manager import ActivitiesManager
+            activities_manager = ActivitiesManager(self.conn, self.cursor)
+            
+            # Get count of existing activities
+            self.cursor.execute("SELECT COUNT(*) FROM activities")
+            activity_count = self.cursor.fetchone()[0]
+            
+            # Only add sample activities if none exist
+            if activity_count == 0:
+                self.addSampleActivities()
+            else:
+                # Refresh the activities view
+                self.activitiesView.refresh()
+        except Exception as e:
+            print(f"Error loading activities: {e}")
 
     def loadDashboardGoals(self):
         """Load goals and create progress wheel visualizations for them."""
@@ -861,8 +919,8 @@ class TaskTitanApp(QMainWindow):
 
     def addQuickTask(self):
         """Show dialog to add a quick task."""
-        self.tasks_view.showAddTaskDialog()
-        # Switch to tasks view after adding
+        self.activitiesView.showAddTaskDialog()
+        # Switch to activities view after adding
         self.changePage(1)
 
     def openDailyView(self, date):
@@ -1082,4 +1140,113 @@ class TaskTitanApp(QMainWindow):
             print(f"Error adding sample goals: {e}")
             # Roll back any changes if something went wrong
             self.conn.rollback() 
+
+    def addSampleActivities(self):
+        """Add sample activities for demo purposes."""
+        # Check if activities view is initialized
+        if not hasattr(self, 'activitiesView'):
+            return
+            
+        # Sample task
+        task_data = {
+            'type': 'task',
+            'title': 'Complete project proposal',
+            'date': QDate.currentDate(),
+            'start_time': QTime(10, 0),
+            'end_time': QTime(12, 0),
+            'priority': 2,  # High
+            'category': 'Work'
+        }
+        self.activitiesView.addActivity(task_data)
+        
+        # Sample event
+        event_data = {
+            'type': 'event',
+            'title': 'Team meeting',
+            'date': QDate.currentDate(),
+            'start_time': QTime(14, 0),
+            'end_time': QTime(15, 30),
+            'category': 'Work'
+        }
+        self.activitiesView.addActivity(event_data)
+        
+        # Sample habit
+        habit_data = {
+            'type': 'habit',
+            'title': 'Morning meditation',
+            'date': QDate.currentDate(),
+            'start_time': QTime(7, 0),
+            'end_time': QTime(7, 30),
+            'days_of_week': 'Mon,Wed,Fri',
+            'category': 'Health'
+        }
+        self.activitiesView.addActivity(habit_data)
+        
+        # Sample future task
+        tomorrow = QDate.currentDate().addDays(1)
+        future_task_data = {
+            'type': 'task',
+            'title': 'Review documentation',
+            'date': tomorrow,
+            'start_time': QTime(11, 0),
+            'end_time': QTime(12, 30),
+            'priority': 1,  # Medium
+            'category': 'Work'
+        }
+        self.activitiesView.addActivity(future_task_data) 
+
+    def onActivityAdded(self, activity):
+        """Handle when a new activity is added."""
+        # Refresh the dashboard counters
+        self.refreshData()
+        
+        # Refresh the dashboard calendar if it exists and this is an event
+        if activity.get('type') == 'event' and hasattr(self, 'dashboard_calendar') and hasattr(self, 'activities_manager'):
+            self.dashboard_calendar.sync_with_activities(self.activities_manager)
+        
+    def onActivityCompleted(self, activity_id, activity_type):
+        """Handle when an activity is marked as completed."""
+        # Refresh the dashboard counters
+        self.refreshData()
+        
+        # Refresh the dashboard calendar if it exists and this is an event
+        if activity_type == 'event' and hasattr(self, 'dashboard_calendar') and hasattr(self, 'activities_manager'):
+            self.dashboard_calendar.sync_with_activities(self.activities_manager)
+        
+    def onActivityDeleted(self, activity_id, activity_type):
+        """Handle when an activity is deleted."""
+        # Refresh the dashboard counters
+        self.refreshData()
+        
+        # Refresh the dashboard calendar if it exists and this is an event
+        if activity_type == 'event' and hasattr(self, 'dashboard_calendar') and hasattr(self, 'activities_manager'):
+            self.dashboard_calendar.sync_with_activities(self.activities_manager) 
+
+    def savePendingChanges(self):
+        """Save any pending changes before closing."""
+        try:
+            # Make sure activities view explicitly saves its data
+            if hasattr(self, 'activitiesView') and hasattr(self.activitiesView, 'saveChanges'):
+                print("Saving activities before exit...")
+                self.activitiesView.saveChanges()
+            
+            # Save any unsaved data in the current view
+            current_widget = self.content_stack.currentWidget()
+            if hasattr(current_widget, 'saveChanges'):
+                print(f"Saving changes for {current_widget.__class__.__name__}")
+                current_widget.saveChanges()
+            
+            # Loop through all views to save any pending changes
+            for i in range(self.content_stack.count()):
+                widget = self.content_stack.widget(i)
+                if widget != current_widget and hasattr(widget, 'saveChanges'):
+                    print(f"Saving changes for {widget.__class__.__name__}")
+                    widget.saveChanges()
+                    
+            # Ensure database commits all changes
+            if hasattr(self, 'conn'):
+                self.conn.commit()
+                
+        except Exception as e:
+            print(f"Error saving pending changes: {e}") 
 
