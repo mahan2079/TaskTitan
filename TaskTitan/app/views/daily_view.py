@@ -591,66 +591,8 @@ class TimelineView(QGraphicsView):
         self.activity_refresh_timer.timeout.connect(self.refreshActivityPositions)
         self.activity_refresh_timer.start(5000)  # Refresh every 5 seconds
         
-        # Create zoom controls as floating buttons
-        self.setupZoomControls()
-        
         # Initialize the current time indicator
         self.addCurrentTimeIndicator()
-    
-    def setupZoomControls(self):
-        """Add zoom control buttons to the view."""
-        # Create zoom buttons as children of the viewport
-        zoom_in_btn = QToolButton(self)
-        zoom_in_btn.setIcon(QIcon.fromTheme("zoom-in", get_icon("zoom-in")))
-        zoom_in_btn.setToolTip("Zoom In")
-        zoom_in_btn.setStyleSheet("""
-            QToolButton {
-                background-color: white;
-                border: 1px solid #E0E0E0;
-                border-radius: 15px;
-                padding: 5px;
-            }
-            QToolButton:hover {
-                background-color: #F5F5F5;
-            }
-        """)
-        zoom_in_btn.clicked.connect(self.zoomIn)
-        self.zoom_in_btn = zoom_in_btn
-        
-        zoom_out_btn = QToolButton(self)
-        zoom_out_btn.setIcon(QIcon.fromTheme("zoom-out", get_icon("zoom-out")))
-        zoom_out_btn.setToolTip("Zoom Out")
-        zoom_out_btn.setStyleSheet("""
-            QToolButton {
-                background-color: white;
-                border: 1px solid #E0E0E0;
-                border-radius: 15px;
-                padding: 5px;
-            }
-            QToolButton:hover {
-                background-color: #F5F5F5;
-            }
-        """)
-        zoom_out_btn.clicked.connect(self.zoomOut)
-        self.zoom_out_btn = zoom_out_btn
-        
-        # Position the buttons
-        self.positionZoomControls()
-    
-    def positionZoomControls(self):
-        """Position the zoom controls in the bottom-right corner."""
-        btn_size = 30
-        margin = 10
-        
-        # Position zoom buttons at the bottom-right corner
-        rect = self.viewport().rect()
-        self.zoom_in_btn.setFixedSize(btn_size, btn_size)
-        self.zoom_out_btn.setFixedSize(btn_size, btn_size)
-        
-        self.zoom_in_btn.move(rect.right() - btn_size - margin, 
-                             rect.bottom() - 2 * btn_size - 2 * margin)
-        self.zoom_out_btn.move(rect.right() - btn_size - margin, 
-                              rect.bottom() - btn_size - margin)
     
     def resizeEvent(self, event):
         """Handle resize events to adjust timeline width."""
@@ -724,12 +666,6 @@ class TimelineView(QGraphicsView):
             
             # Update positions of all activities
             self.refreshActivityPositions()
-            
-            # Update zoom buttons
-            if hasattr(self, 'zoom_in_btn') and self.zoom_in_btn:
-                self.zoom_in_btn.setEnabled(self.zoom_level < 2.0)
-            if hasattr(self, 'zoom_out_btn') and self.zoom_out_btn:
-                self.zoom_out_btn.setEnabled(self.zoom_level > 0.5)
             
             # Update time indicator position
             self.updateCurrentTimeIndicator()
