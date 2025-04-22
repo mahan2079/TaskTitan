@@ -1,7 +1,16 @@
 """
 Daily planning view for TaskTitan.
 """
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+                           QScrollArea, QFrame, QSplitter, QTabWidget, QListWidget, 
+                           QListWidgetItem, QDialog, QLineEdit, QTimeEdit, QDateEdit,
+                           QTextEdit, QCheckBox, QComboBox, QDialogButtonBox, QMessageBox, QMenu,
+                           QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsTextItem,
+                           QGraphicsItem, QSizePolicy, QApplication, QGraphicsDropShadowEffect,
+                           QGraphicsLineItem, QGraphicsEllipseItem, QProgressBar, QSpinBox,
+                           QToolButton, QSlider, QRadioButton, QButtonGroup, QFormLayout,
+                           QColorDialog, QScrollBar, QCalendarWidget, QStackedWidget,
+                           QStyledItemDelegate, QStyleOptionViewItem, QStyle, QAbstractItemView)
 from PyQt6.QtCore import QDate, Qt
 
 class DailyView(QWidget):
