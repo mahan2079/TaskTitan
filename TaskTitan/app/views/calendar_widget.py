@@ -1,10 +1,120 @@
-from PyQt6.QtWidgets import QCalendarWidget, QWidget, QVBoxLayout, QLabel, QGridLayout, QSizePolicy, QScrollArea, QFrame, QHBoxLayout
+from PyQt6.QtWidgets import (QCalendarWidget, QWidget, QVBoxLayout, QLabel, QGridLayout, 
+                          QSizePolicy, QScrollArea, QFrame, QHBoxLayout, QApplication, QToolButton)
 from PyQt6.QtWidgets import QDialog, QPushButton, QLineEdit, QComboBox, QTimeEdit, QDialogButtonBox, QFormLayout, QColorDialog
-from PyQt6.QtCore import Qt, QDate, QSize, pyqtSignal, QPointF, QTime
-from PyQt6.QtGui import QColor, QPainter, QPen, QBrush, QPalette, QLinearGradient, QFont, QRadialGradient
+from PyQt6.QtCore import Qt, QDate, QSize, pyqtSignal, QPointF, QTime, QRect
+from PyQt6.QtGui import QColor, QPainter, QPen, QBrush, QPalette, QLinearGradient, QFont, QRadialGradient, QFontDatabase
+import datetime
+import math
+import sys
 
 # Import ActivityAddEditDialog for consistency across the application
 from app.views.unified_activities_widget import ActivityAddEditDialog
+
+# Corrected Persian Date Conversion
+class PersianDate:
+    """Utility class for correct Gregorian to Persian date conversion."""
+    
+    @staticmethod
+    def gregorian_to_persian(date):
+        """Convert Gregorian date to Persian date using the official Iranian calendar algorithm."""
+        year = date.year()
+        month = date.month()
+        day = date.day()
+        
+        # Convert Gregorian to Julian Day Number
+        a = math.floor((14 - month) / 12)
+        y = year + 4800 - a
+        m = month + 12 * a - 3
+        jdn = day + math.floor((153 * m + 2) / 5) + 365 * y + math.floor(y / 4) - math.floor(y / 100) + math.floor(y / 400) - 32045
+        
+        # Convert Julian Day Number to Persian
+        jdn = jdn - 1948320.5  # Subtract Persian epoch
+        
+        # Calculate Persian year
+        p_year = math.floor((jdn + 0.5) / 365.2421986)
+        p_year = p_year + 1  # Add 1 to get the correct year
+        
+        # Calculate Persian month and day
+        p_month = 1
+        p_day = 1
+        
+        # Calculate the number of days since the start of the Persian year
+        days_in_year = jdn - PersianDate._persian_to_jdn(p_year, 1, 1)
+        
+        # Adjust for the one-day offset
+        days_in_year = days_in_year + 1
+        
+        # Determine the Persian month
+        if days_in_year < 186:
+            p_month = math.floor(days_in_year / 31) + 1
+            p_day = days_in_year % 31 + 1
+        else:
+            days_in_year = days_in_year - 186
+            p_month = math.floor(days_in_year / 30) + 7
+            p_day = days_in_year % 30 + 1
+        
+        return (p_year, p_month, p_day)
+    
+    @staticmethod
+    def _persian_to_jdn(year, month, day):
+        """Convert Persian date to Julian Day Number."""
+        # Calculate the number of days since the Persian epoch
+        days = (year - 1) * 365
+        days += math.floor((year - 1) / 4)
+        days -= math.floor((year - 1) / 100)
+        days += math.floor((year - 1) / 400)
+        
+        # Add days for months
+        if month <= 7:
+            days += (month - 1) * 31
+        else:
+            days += 186 + (month - 7) * 30
+        
+        # Add days
+        days += day
+        
+        # Add Persian epoch
+        return days + 1948320.5
+    
+    @staticmethod
+    def get_persian_month_name(month):
+        """Get Persian month name."""
+        months = [
+            "فروردین", "اردیبهشت", "خرداد", 
+            "تیر", "مرداد", "شهریور", 
+            "مهر", "آبان", "آذر", 
+            "دی", "بهمن", "اسفند"
+        ]
+        if 1 <= month <= 12:
+            return months[month-1]
+        return ""
+    
+    @staticmethod
+    def get_persian_short_month_name(month):
+        """Get Persian month short name (first 3 characters)."""
+        full_name = PersianDate.get_persian_month_name(month)
+        return full_name[:3] if full_name else ""
+    
+    @staticmethod
+    def get_persian_day_of_week(date):
+        """Get Persian day of week name."""
+        # In Persian calendar, the week starts on Saturday (unlike Gregorian's Monday)
+        # QDate uses 1=Monday, 7=Sunday, Persian uses 0=Saturday, 6=Friday
+        gregorian_day_of_week = date.dayOfWeek()
+        # Convert to Persian day of week (0=Saturday to 6=Friday)
+        persian_day_of_week = (gregorian_day_of_week + 1) % 7
+        
+        days = ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"]
+        return days[persian_day_of_week]
+    
+    @staticmethod
+    def get_persian_short_day_of_week(date):
+        """Get Persian day of week abbreviation."""
+        gregorian_day_of_week = date.dayOfWeek()
+        persian_day_of_week = (gregorian_day_of_week + 1) % 7
+        
+        days = ["ش", "ی", "د", "س", "چ", "پ", "ج"]
+        return days[persian_day_of_week]
 
 class EventDialog(QDialog):
     """Dialog for adding or editing calendar events."""
@@ -234,9 +344,9 @@ class EventDialog(QDialog):
             "date": self.event_date
         }
 
-
-class ModernCalendarWidget(QCalendarWidget):
-    """A modern styled calendar widget for TaskTitan."""
+# Completely redesigned Calendar Widget
+class DualCalendarWidget(QCalendarWidget):
+    """A modern, elegant calendar widget displaying both Gregorian and Persian calendars."""
     
     eventClicked = pyqtSignal(dict)  # Signal emitted when an event is clicked
     dateDoubleClicked = pyqtSignal(QDate)  # Signal emitted when a date is double-clicked
@@ -252,11 +362,15 @@ class ModernCalendarWidget(QCalendarWidget):
         self.setGridVisible(False)
         self.setSelectionMode(QCalendarWidget.SelectionMode.SingleSelection)
         
-        # Custom properties
-        self.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
-        self.today_color = QColor("#6366F1")  # Indigo color for today
-        self.weekend_color = QColor("#EEF2FF")  # Light indigo for weekends
-        self.selection_color = QColor("#818CF8")  # Light indigo for selection
+        # Enhanced color palette
+        self.gregorian_text_color = QColor("#1E293B")  # Dark slate blue for Gregorian dates
+        self.persian_text_color = QColor("#FB8C00")    # Orange for Persian dates
+        self.today_color = QColor("#6366F1")           # Indigo for today's highlight
+        self.weekend_color = QColor("#F9FAFB")         # Light gray for weekend background
+        self.selection_color = QColor("#818CF8")       # Light indigo for selection
+        self.divider_color = QColor("#E0E7FF")         # Light indigo for divider
+        
+        # Event colors
         self.event_colors = [
             QColor("#F87171"),  # Red
             QColor("#FBBF24"),  # Amber
@@ -265,29 +379,31 @@ class ModernCalendarWidget(QCalendarWidget):
             QColor("#A78BFA")   # Purple
         ]
         
-        # Set default size
-        self.setFixedHeight(550)  # Make calendar even taller
+        # Add a Persian font
+        # QFontDatabase.addApplicationFont("path/to/persian-font.ttf")  # Could add a Persian font
+        self.persian_font = QFont("Arial", 9)  # Fallback
         
-        # Set custom styling
+        # Sizing for dual calendar
+        self.setFixedHeight(680)
+        
+        # Apply custom styling
         self.initStyleSheet()
         
-        # Mark current date with a different color
+        # Mark current date
         self.setSelectedDate(QDate.currentDate())
         
-        # Enhanced events dictionary: date_str -> list of event dictionaries
+        # Events dictionary: date_str -> list of event dictionaries
         self.events = {}
         
-        # Generate some sample events
+        # Generate sample events
         self.generateSampleEvents()
         
         # Connect signals
         self.activated.connect(self.onDateDoubleClicked)
-        
+    
     def mouseDoubleClickEvent(self, event):
         """Handle double-click events on the calendar."""
         super().mouseDoubleClickEvent(event)
-        # Get the date at the clicked position - more reliable than using selectedDate
-        pos = event.position().toPoint() if hasattr(event, 'position') else event.pos()
         date = self.selectedDate()
         self.dateDoubleClicked.emit(date)
         
@@ -297,13 +413,9 @@ class ModernCalendarWidget(QCalendarWidget):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             event_data = dialog.get_event_data()
             self.addEvent(event_data)
-            
+    
     def addEvent(self, event_data):
-        """Add a new event to the calendar.
-        
-        Args:
-            event_data: Dictionary containing event details
-        """
+        """Add a new event to the calendar."""
         date_str = event_data["date"].toString("yyyy-MM-dd")
         
         if date_str not in self.events:
@@ -311,7 +423,7 @@ class ModernCalendarWidget(QCalendarWidget):
             
         self.events[date_str].append(event_data)
         self.updateCells()
-        
+    
     def generateSampleEvents(self):
         """Generate sample events for the calendar."""
         current_date = QDate.currentDate()
@@ -363,23 +475,34 @@ class ModernCalendarWidget(QCalendarWidget):
             if date_str not in self.events:
                 self.events[date_str] = []
             self.events[date_str].append(event)
-        
+    
     def initStyleSheet(self):
-        """Initialize custom style sheet for calendar."""
+        """Initialize custom style sheet for modern calendar."""
         self.setStyleSheet("""
             QCalendarWidget {
                 background-color: #ffffff;
                 border: none;
+                font-family: 'Segoe UI', Arial, sans-serif;
+            }
+            
+            QCalendarWidget QWidget#qt_calendar_navigationbar {
+                background-color: #F8FAFC;
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
+                border-bottom: 1px solid #E2E8F0;
+                padding: 8px;
+                min-height: 50px;
             }
             
             QCalendarWidget QToolButton {
                 color: #4F46E5;
                 background-color: transparent;
                 border: none;
-                border-radius: 4px;
+                border-radius: 8px;
                 font-weight: bold;
-                padding: 8px;
+                padding: 8px 12px;
                 font-size: 15px;
+                margin: 2px;
             }
             
             QCalendarWidget QToolButton:hover {
@@ -390,11 +513,16 @@ class ModernCalendarWidget(QCalendarWidget):
                 background-color: #C7D2FE;
             }
             
+            QCalendarWidget QToolButton::menu-indicator {
+                image: none;
+            }
+            
             QCalendarWidget QMenu {
                 width: 150px;
                 background-color: white;
                 border: 1px solid #D1D5DB;
                 border-radius: 8px;
+                padding: 5px;
             }
             
             QCalendarWidget QMenu::item {
@@ -420,19 +548,13 @@ class ModernCalendarWidget(QCalendarWidget):
                 color: #1E293B;
                 font-size: 14px;
                 font-weight: 500;
-                selection-background-color: #EEF2FF;
-                selection-color: #4F46E5;
                 outline: 0;
+                selection-background-color: transparent;
+                background-color: white;
             }
             
             QCalendarWidget QAbstractItemView:disabled {
                 color: #9CA3AF;
-            }
-            
-            QCalendarWidget QWidget#qt_calendar_navigationbar {
-                background-color: #ffffff;
-                border-bottom: 1px solid #E5E7EB;
-                padding: 8px;
             }
             
             /* Make headers stand out more */
@@ -441,164 +563,229 @@ class ModernCalendarWidget(QCalendarWidget):
             }
             
             QCalendarWidget QTableView QHeaderView::section {
-                color: #6366F1; 
+                color: #FB8C00; 
                 font-weight: bold;
-                font-size: 14px;
-                padding: 6px;
-                background-color: #F1F5F9;
+                font-size: 16px;
+                padding: 10px 6px;
+                background-color: #F8FAFC;
                 border: none;
+                border-bottom: 1px solid #E2E8F0;
+                border-radius: 0;
+            }
+            
+            /* Increase the size of cells for the dual calendar */
+            QCalendarWidget QTableView {
+                selection-background-color: transparent;
+                selection-color: #1E293B;
+            }
+            
+            /* Style for the "Today" text in the navigation bar */
+            QCalendarWidget QToolButton#qt_calendar_todaybutton {
+                color: white;
+                background-color: #4F46E5;
+                border-radius: 8px;
+                padding: 6px 12px;
+                margin: 2px;
+            }
+            
+            QCalendarWidget QToolButton#qt_calendar_todaybutton:hover {
+                background-color: #4338CA;
+            }
+            
+            QCalendarWidget QToolButton#qt_calendar_prevmonth, 
+            QCalendarWidget QToolButton#qt_calendar_nextmonth {
+                font-size: 18px;
+                padding: 0px 8px;
+            }
+            
+            QCalendarWidget QWidget {
+                alternate-background-color: #FFFFFF;
             }
         """)
-        
+    
     def paintCell(self, painter, rect, date):
-        """Custom paint method for calendar cells."""
+        """Paint cell with both Gregorian and Persian calendars with elegant design."""
         painter.save()
         
         # Get current date for comparison
         current_date = QDate.currentDate()
         selected_date = self.selectedDate()
         
-        # Clear background first
+        # First clear the cell background
+        cell_rect = rect.adjusted(1, 1, -1, -1)
         painter.fillRect(rect, QColor(255, 255, 255))
         
-        # Handle weekends
-        if date.dayOfWeek() >= 6:  # Saturday or Sunday
-            gradient = QLinearGradient(
-                QPointF(rect.topLeft()), QPointF(rect.bottomRight())
-            )
-            gradient.setColorAt(0, self.weekend_color.lighter(107))
-            gradient.setColorAt(1, self.weekend_color)
-            painter.fillRect(rect, gradient)
-            
-        # Special styling for today
-        if date == current_date:
-            # Draw gradient background for today
-            today_gradient = QLinearGradient(
-                QPointF(rect.topLeft()), QPointF(rect.bottomRight())
-            )
-            today_gradient.setColorAt(0, self.today_color.lighter(130))
-            today_gradient.setColorAt(1, self.today_color.lighter(150))
-            
-            painter.fillRect(rect, today_gradient)
-            
-            # Draw border with rounded corners
-            painter.setPen(QPen(self.today_color, 2))
-            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 8, 8)
-            
-            # Set text color
-            painter.setPen(QColor(255, 255, 255))
-        
-        # Selected date styling
-        elif date == selected_date:
-            # Draw gradient background for selected date
-            select_gradient = QLinearGradient(
-                QPointF(rect.topLeft()), QPointF(rect.bottomRight())
-            )
-            select_gradient.setColorAt(0, self.selection_color.lighter(120))
-            select_gradient.setColorAt(1, self.selection_color)
-            
-            painter.fillRect(rect, select_gradient)
-            
-            # Draw border with rounded corners
-            painter.setPen(QPen(self.selection_color.darker(110), 2))
-            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 8, 8)
-            
-            # Set text color
-            painter.setPen(QColor(255, 255, 255))
-            
+        # Create a rounded rectangle for the cell with shadow effect
+        if date.month() == self.monthShown():
+            # Current month cells are white with a subtle border
+            painter.setPen(QPen(QColor("#E2E8F0"), 0.5))
+            painter.setBrush(QBrush(QColor("#FFFFFF")))
         else:
-            # Default text color
-            painter.setPen(QColor(30, 41, 59))  # Default dark color
-            
-        # Draw the date text with improved font
-        font = painter.font()
-        font.setPointSize(11)
+            # Out-of-month cells are slightly grayed out
+            painter.setPen(QPen(QColor("#E2E8F0"), 0.5))
+            painter.setBrush(QBrush(QColor("#F9FAFB")))
         
-        if date == current_date or date == selected_date:
-            font.setBold(True)
+        # Handle weekends with lighter background
+        if date.dayOfWeek() >= 6:  # Saturday or Sunday
+            painter.setBrush(QBrush(self.weekend_color))
+        
+        # Draw the cell background
+        painter.drawRoundedRect(cell_rect, 6, 6)
+        
+        # Special styling for today's date
+        if date == current_date:
+            today_rect = rect.adjusted(3, 3, -3, -3)
+            painter.setPen(QPen(self.today_color, 0.7))
+            painter.setBrush(QBrush(self.today_color.lighter(160)))
+            painter.drawRoundedRect(today_rect, 6, 6)
             
-        painter.setFont(font)
-        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(date.day()))
+            # Set text colors for today
+            g_text_color = QColor("#4338CA")  # Darker indigo for Gregorian
+            p_text_color = QColor("#FB8C00")  # Orange for Persian
+        
+        # Special styling for selected date
+        elif date == selected_date:
+            select_rect = rect.adjusted(3, 3, -3, -3)
+            painter.setPen(QPen(self.selection_color, 0.7))
+            painter.setBrush(QBrush(self.selection_color.lighter(160)))
+            painter.drawRoundedRect(select_rect, 6, 6)
             
+            # Set text colors for selected date
+            g_text_color = QColor("#4338CA")  # Darker indigo for Gregorian
+            p_text_color = QColor("#FB8C00")  # Orange for Persian
+        else:
+            # Default text colors
+            g_text_color = self.gregorian_text_color
+            p_text_color = self.persian_text_color
+        
+        # Get Persian date
+        persian_year, persian_month, persian_day = PersianDate.gregorian_to_persian(date)
+        
+        # Draw divider between Gregorian and Persian dates
+        painter.setPen(QPen(self.divider_color, 0.8, Qt.PenStyle.SolidLine))
+        painter.drawLine(
+            int(rect.left() + 5), 
+            int(rect.top() + rect.height() * 0.5), 
+            int(rect.right() - 5), 
+            int(rect.top() + rect.height() * 0.5)
+        )
+        
+        # Draw Gregorian date
+        gregorian_font = painter.font()
+        gregorian_font.setPointSize(11)
+        gregorian_font.setBold(date == current_date or date == selected_date)
+        painter.setFont(gregorian_font)
+        painter.setPen(g_text_color)
+        
+        # Determine text alignment for Gregorian date
+        g_text_rect = QRect(
+            int(rect.left() + 2),
+            int(rect.top() + 5),
+            int(rect.width() - 4),
+            int(rect.height() / 2 - 5)
+        )
+        
+        # Draw Gregorian date
+        if date.month() == self.monthShown():
+            # Current month days are shown normally
+            painter.drawText(g_text_rect, Qt.AlignmentFlag.AlignCenter, str(date.day()))
+        else:
+            # Out-of-month days are shown with lighter color
+            painter.setPen(QColor(g_text_color).lighter(150))
+            painter.drawText(g_text_rect, Qt.AlignmentFlag.AlignCenter, str(date.day()))
+        
+        # Draw Persian date
+        persian_font = self.persian_font
+        persian_font.setPointSize(9)
+        persian_font.setBold(date == current_date or date == selected_date)
+        painter.setFont(persian_font)
+        painter.setPen(p_text_color)
+        
+        # Determine text alignment for Persian date
+        p_text_rect = QRect(
+            int(rect.left() + 2),
+            int(rect.top() + rect.height() / 2 + 2),
+            int(rect.width() - 4),
+            int(rect.height() / 2 - 7)
+        )
+        
+        # Draw Persian date
+        if date.month() == self.monthShown():
+            # Current month days are shown normally
+            painter.drawText(p_text_rect, Qt.AlignmentFlag.AlignCenter, str(persian_day))
+        else:
+            # Out-of-month days are shown with lighter color
+            painter.setPen(QColor(p_text_color).lighter(150))
+            painter.drawText(p_text_rect, Qt.AlignmentFlag.AlignCenter, str(persian_day))
+        
         # Check if this date has events
         date_str = date.toString("yyyy-MM-dd")
         if date_str in self.events:
             event_list = self.events[date_str]
             event_count = len(event_list)
             
-            # Draw colorful event indicators - improved smaller version
+            # Draw elegant event indicators
             if event_count > 0:
-                # Event dots container at the bottom of the cell
-                dot_y = rect.bottom() - 8  # Moved up a bit to be less obtrusive
+                # Show event indicators at the very bottom of the cell
+                indicator_y = rect.bottom() - 6
                 
-                # Limit to max 5 dots
+                # Limit to max 5 indicators
                 displayed_count = min(event_count, 5)
                 
-                # Calculate width based on number of dots
-                total_width = (displayed_count * 5) + ((displayed_count - 1) * 2)  # dots + spaces
+                # Calculate total width of indicators
+                dot_size = 5
+                dot_spacing = 2
+                total_width = (displayed_count * dot_size) + ((displayed_count - 1) * dot_spacing)
                 start_x = rect.center().x() - (total_width / 2)
                 
                 for i in range(displayed_count):
-                    # Use the event's color for the dot
-                    if i < len(event_list):
-                        dot_color = event_list[i].get("color", self.event_colors[i % len(self.event_colors)])
-                    else:
-                        # Fallback to default colors if we somehow have more events than details
-                        color_index = i % len(self.event_colors)
-                        dot_color = self.event_colors[color_index]
+                    # Get event color
+                    event_color = event_list[i].get("color", self.event_colors[i % len(self.event_colors)])
                     
-                    # Create a radial gradient for each dot - smaller, cleaner dots
-                    center_x = start_x + (i * 7)  # Tighter spacing
-                    center = QPointF(center_x, dot_y)
+                    # Draw a rounded rect indicator
+                    indicator_rect = QRect(
+                        int(start_x + (i * (dot_size + dot_spacing))),
+                        int(indicator_y - dot_size/2),
+                        dot_size,
+                        dot_size
+                    )
                     
-                    # Smaller dots with subtle border
-                    painter.setPen(QPen(dot_color.darker(120), 0.5))
-                    dot_gradient = QRadialGradient(center, 2.5)  # Smaller size
-                    dot_gradient.setColorAt(0, dot_color.lighter(120))
-                    dot_gradient.setColorAt(1, dot_color)
-                    
-                    # Draw dot
-                    painter.setBrush(dot_gradient)
-                    painter.drawEllipse(center, 2.5, 2.5)  # Smaller dots
+                    painter.setPen(QPen(event_color.darker(120), 0.5))
+                    painter.setBrush(QBrush(event_color))
+                    painter.drawEllipse(indicator_rect)
                 
                 # If we have more events than can be displayed, add a "more" indicator
                 if event_count > 5:
-                    more_x = start_x + (displayed_count * 7) + 3
+                    more_x = start_x + (displayed_count * (dot_size + dot_spacing)) + 2
                     painter.setPen(QColor(100, 100, 100, 180))
-                    painter.drawText(QPointF(more_x, dot_y + 3), "+")
+                    painter.drawText(
+                        QPointF(more_x, indicator_y + 3), 
+                        "+"
+                    )
         
         painter.restore()
-        
+    
     def setEvents(self, events_data):
-        """Set events data for the calendar.
-        
-        Args:
-            events_data: Dictionary with dates as keys (format: 'yyyy-MM-dd') and 
-                         list of event dictionaries as values.
-        """
+        """Set events data for the calendar."""
         self.events = events_data
         self.updateCells()
         
     def getEvents(self, date):
-        """Get events for a specific date.
-        
-        Args:
-            date: QDate object
-            
-        Returns:
-            List of event dictionaries for the date, or empty list if none
-        """
+        """Get events for a specific date."""
         date_str = date.toString("yyyy-MM-dd")
         return self.events.get(date_str, [])
         
     def sizeHint(self):
         """Suggested size for the widget."""
-        return QSize(500, 550)
+        return QSize(520, 680)
         
     def minimumSizeHint(self):
         """Minimum suggested size for the widget."""
-        return QSize(300, 400) 
+        return QSize(400, 500)
 
+# Alias for backward compatibility
+CustomCalendarWidget = DualCalendarWidget
+ModernCalendarWidget = DualCalendarWidget
 
 class CalendarWithEventList(QWidget):
     """Widget combining a calendar with an event list display."""
@@ -615,7 +802,7 @@ class CalendarWithEventList(QWidget):
         layout.setSpacing(10)
         
         # Create calendar widget
-        self.calendar = ModernCalendarWidget()
+        self.calendar = CustomCalendarWidget()
         layout.addWidget(self.calendar)
         
         # Create events section - now beside the calendar
