@@ -10,8 +10,8 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBut
                            QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsTextItem,
                            QGraphicsItem, QSizePolicy, QApplication, QGraphicsDropShadowEffect,
                            QGraphicsLineItem, QGraphicsEllipseItem)
-from PyQt6.QtCore import Qt, QDate, QTime, QSize, pyqtSignal, QRectF, QMargins, QTimer
-from PyQt6.QtGui import QIcon, QColor, QBrush, QPen, QFont, QPainter, QCursor, QFontMetrics, QLinearGradient
+from PyQt6.QtCore import Qt, QDate, QTime, QSize, pyqtSignal, QRectF, QMargins, QTimer, QPointF
+from PyQt6.QtGui import QIcon, QColor, QBrush, QPen, QFont, QPainter, QCursor, QFontMetrics, QLinearGradient, QPolygonF
 from datetime import datetime, timedelta
 import sqlite3
 
@@ -24,6 +24,7 @@ TIMELINE_LEFT_MARGIN = 60
 TIMELINE_WIDTH = 1000
 TIMELINE_START_HOUR = 0
 TIMELINE_END_HOUR = 23
+ACTIVITY_STANDARD_WIDTH = 400  # Double the width (was 200)
 
 class ActivityTimelineItem(QGraphicsRectItem):
     """Graphical representation of an activity in the timeline."""
@@ -36,11 +37,15 @@ class ActivityTimelineItem(QGraphicsRectItem):
         
         # Set appearance based on activity type and completion
         self.setupAppearance()
+        
+        # Track if this activity is locally hidden (skipped for today)
+        self.is_locally_hidden = activity.get('locally_hidden', False)
     
     def setupAppearance(self):
         """Configure the visual appearance of the activity box."""
         activity_type = self.activity.get('type', 'task')
         is_completed = self.activity.get('completed', False)
+        is_locally_hidden = self.activity.get('locally_hidden', False)
         
         # Get activity color (or use default based on type)
         if 'color' in self.activity and self.activity['color']:
@@ -60,6 +65,11 @@ class ActivityTimelineItem(QGraphicsRectItem):
         # Use pattern for completed activities but preserve the exact color
         if is_completed:
             brush = QBrush(base_color, Qt.BrushStyle.Dense4Pattern)
+        elif is_locally_hidden:
+            # Use a different pattern for locally hidden activities
+            brush = QBrush(base_color, Qt.BrushStyle.Dense7Pattern)
+            # Make the color more transparent for hidden activities
+            base_color.setAlpha(120)
         else:
             brush = QBrush(base_color)  # Use exact color, no lightening
         
@@ -74,6 +84,7 @@ class ActivityTimelineItem(QGraphicsRectItem):
         self.setData(0, "activity")
         self.setData(1, self.activity['id'])
         self.setData(2, activity_type)
+        self.setData(3, is_locally_hidden)  # Store locally_hidden state in item data
     
     def paint(self, painter, option, widget):
         """Paint the activity item with custom appearance."""
@@ -105,6 +116,23 @@ class ActivityTimelineItem(QGraphicsRectItem):
             painter.drawLine(
                 checkmark_rect.center().x(), checkmark_rect.bottom() - 3,
                 checkmark_rect.right() - 3, checkmark_rect.top() + 3
+            )
+        
+        # Draw locally hidden indicator if applicable
+        if self.activity.get('locally_hidden', False):
+            hidden_rect = QRectF(self.rect().right() - 20, self.rect().top() + (25 if self.activity.get('completed', False) else 5), 15, 15)
+            painter.setBrush(QBrush(QColor("#FFFFFF")))
+            painter.drawEllipse(hidden_rect)
+            
+            # Draw "eye with slash" icon to indicate hidden
+            painter.setPen(QPen(QColor("#64748B"), 2))
+            painter.drawLine(
+                hidden_rect.left() + 2, hidden_rect.center().y(),
+                hidden_rect.right() - 2, hidden_rect.center().y()
+            )
+            painter.drawLine(
+                hidden_rect.left() + 2, hidden_rect.center().y(),
+                hidden_rect.right() - 2, hidden_rect.center().y()
             )
         
         # Set text color based on background color brightness
@@ -344,19 +372,8 @@ class TimelineView(QGraphicsView):
         # Calculate position based on time
         y_position = (hour + minute / 60.0) * HOUR_HEIGHT
         
-        # Create the gradient for the line
-        gradient = QLinearGradient(0, 0, TIMELINE_WIDTH, 0)
-        gradient.setColorAt(0.0, QColor(255, 0, 0, 200))  # Solid red at start
-        gradient.setColorAt(1.0, QColor(255, 0, 0, 30))   # Transparent red at end
-        
-        # Create the line
-        self.time_line = QGraphicsLineItem(0, y_position, TIMELINE_WIDTH, y_position)
-        pen = QPen(QBrush(gradient), 2)
-        self.time_line.setPen(pen)
-        self.scene.addItem(self.time_line)
-        
-        # Add a dot at the start of the line
-        self.time_dot = QGraphicsEllipseItem(-6, y_position - 6, 12, 12)
+        # Add an arrow at the timeline axis
+        self.time_dot = QGraphicsEllipseItem(TIMELINE_LEFT_MARGIN - 24, y_position - 6, 12, 12)
         self.time_dot.setBrush(QBrush(QColor(255, 0, 0)))
         self.time_dot.setPen(QPen(QColor(255, 255, 255), 1))
         
@@ -368,6 +385,19 @@ class TimelineView(QGraphicsView):
         self.time_dot.setGraphicsEffect(glow)
         
         self.scene.addItem(self.time_dot)
+        
+        # Add arrow point
+        arrow_points = [
+            (TIMELINE_LEFT_MARGIN - 12, y_position),
+            (TIMELINE_LEFT_MARGIN - 2, y_position - 6),
+            (TIMELINE_LEFT_MARGIN - 2, y_position + 6)
+        ]
+        
+        # Create a polygon for the arrow
+        polygon = QPolygonF([QPointF(x, y) for x, y in arrow_points])
+        self.time_line = self.scene.addPolygon(polygon, 
+                                              QPen(QColor(255, 0, 0)), 
+                                              QBrush(QColor(255, 0, 0)))
         
         # Add current time text
         time_string = current_time.toString("h:mm AP")
@@ -381,79 +411,30 @@ class TimelineView(QGraphicsView):
         bg_rect.setPen(QPen(Qt.PenStyle.NoPen))
         bg_rect.setParentItem(self.time_text)
         
-        # Position the text to the right of the dot
-        self.time_text.setPos(15, y_position - 12)
+        # Position the text to the left of the arrow
+        self.time_text.setPos(TIMELINE_LEFT_MARGIN - 70, y_position - 12)
         self.scene.addItem(self.time_text)
         
         # Ensure the current time indicator is visible
-        self.ensureVisible(self.time_line, 50, 100)
+        self.ensureVisible(self.time_dot, 50, 100)
     
     def refreshActivityPositions(self):
-        """Refresh the positioning of activities to avoid overlaps while maintaining consistent widths."""
-        # Group activities by time overlap
-        overlap_groups = []
+        """Refresh the positioning of activities to ensure they all have the same width."""
+        # Set up standard width for all activities - double the width
+        fixed_width = ACTIVITY_STANDARD_WIDTH
         
-        # Available width for positioning - VERY WIDE, ALMOST FULL TIMELINE WIDTH
-        available_width = TIMELINE_WIDTH - TIMELINE_LEFT_MARGIN - 40
-        max_columns = 1  # Single column for maximum width
-        fixed_column_width = available_width
-        
-        # First pass: find all overlapping groups
+        # Position all items in a single column with standard width
         for item_id, item in self.activity_items.items():
             if item not in self.scene.items():
                 continue
                 
             item_rect = item.rect()
-            item_y = item_rect.y()
-            item_height = item_rect.height()
-            item_bottom = item_y + item_height
             
-            # Check which group this activity belongs to
-            found_group = False
-            for group in overlap_groups:
-                # Check if this item overlaps with any item in the group
-                overlaps_with_group = False
-                for group_item in group:
-                    group_rect = group_item.rect()
-                    group_y = group_rect.y()
-                    group_bottom = group_y + group_rect.height()
-                    
-                    if (item_y <= group_bottom and group_y <= item_bottom):
-                        overlaps_with_group = True
-                        break
-                
-                if overlaps_with_group:
-                    group.append(item)
-                    found_group = True
-                    break
+            # Set X position to a fixed position (no column calculation)
+            x_pos = TIMELINE_LEFT_MARGIN + 10
             
-            # If not in any group, create a new group
-            if not found_group:
-                overlap_groups.append([item])
-        
-        # Second pass: reposition items while maintaining width
-        for group in overlap_groups:
-            if len(group) <= 1:
-                continue  # No need to adjust single items
-                
-            # Single column layout
-            columns = 1  # Always use 1 column
-            
-            # Sort items by start time to ensure consistent ordering
-            group.sort(key=lambda x: x.rect().y())
-            
-            # Fixed very wide item width with small margins
-            item_width = fixed_column_width - 20
-            
-            for item in group:
-                item_rect = item.rect()
-                
-                # Set X position with small margin on both sides
-                x_pos = TIMELINE_LEFT_MARGIN + 10
-                
-                # Only update X position and width, keep Y position and height
-                item.setRect(x_pos, item_rect.y(), item_width, item_rect.height())
-                item.column_index = 0  # Always use column 0
+            # Update item position and width
+            item.setRect(x_pos, item_rect.y(), fixed_width, item_rect.height())
 
     def closeEvent(self, event):
         """Handle close event to stop timer."""
@@ -519,6 +500,24 @@ class TimelineView(QGraphicsView):
     
     def addActivity(self, activity):
         """Add an activity to the timeline."""
+        # Skip adding locally hidden activities if viewing current date
+        daily_view = None
+        parent = self.parent()
+        while parent:
+            if isinstance(parent, DailyView):
+                daily_view = parent
+                break
+            if hasattr(parent, 'parent'):
+                parent = parent.parent()
+            else:
+                break
+        
+        # Check if we should skip rendering this activity (if it's hidden for today's view)
+        if daily_view and hasattr(daily_view, 'current_date'):
+            if activity.get('locally_hidden', False) and daily_view.current_date == QDate.currentDate():
+                # Still add to the dictionary but with reduced opacity
+                pass
+        
         # Skip if missing required data
         if (not activity.get('id') or
             not activity.get('title') or
@@ -619,68 +618,129 @@ class TimelineView(QGraphicsView):
         self.activity_items.clear()
     
     def showTimelineContextMenu(self, pos):
-        """Show context menu at the specified position."""
+        """Show context menu for the timeline."""
         scene_pos = self.mapToScene(pos)
         
-        # Only show context menu in the activity area (right of the time axis)
-        if scene_pos.x() < TIMELINE_LEFT_MARGIN:
-            return
+        # Check if we clicked on an activity
+        item = self.scene.itemAt(scene_pos, self.transform())
         
-        # Calculate the time at the clicked position
-        y_pos = scene_pos.y()
-        minutes_on_timeline = (y_pos / HOUR_HEIGHT) * 60
-        minutes_since_start = minutes_on_timeline + (TIMELINE_START_HOUR * 60)
-        
-        # Convert to hours and minutes
-        hours = int(minutes_since_start / 60)
-        minutes = int(minutes_since_start % 60)
-        
-        # Round minutes to the nearest 5
-        minutes = round(minutes / 5) * 5
-        if minutes == 60:
-            hours += 1
-            minutes = 0
+        if item and item.data(0) == "activity":
+            # Context menu for an activity
+            activity_id = item.data(1)
+            activity_type = item.data(2)
+            locally_hidden = item.data(3)
             
-        # Create time string to show in the menu
-        clicked_time = QTime(hours, minutes)
-        time_str = clicked_time.toString("h:mm AP")
-        
-        menu = QMenu(self)
-        
-        # Add action to add different activity types
-        menu.addSection(f"At {time_str}")
-        add_task_action = menu.addAction("Add Task Here")
-        add_event_action = menu.addAction("Add Event Here")
-        add_habit_action = menu.addAction("Add Habit Here")
-        
-        # Show menu and handle selection
-        action = menu.exec(self.mapToGlobal(pos))
-        
-        # Find the DailyView parent - might not be the direct parent
-        daily_view = None
-        parent = self.parent()
-        
-        # Walk up the parent chain until we find a DailyView
-        while parent:
-            if isinstance(parent, DailyView):
-                daily_view = parent
-                break
-            # Try to get the parent's parent
-            if hasattr(parent, 'parent'):
-                parent = parent.parent()
-            else:
-                break
-        
-        # Create activity at the clicked time if we found the DailyView
-        if daily_view:
-            if action == add_task_action:
-                daily_view.addActivity('task', scene_pos.x(), scene_pos.y())
-            elif action == add_event_action:
-                daily_view.addActivity('event', scene_pos.x(), scene_pos.y())
-            elif action == add_habit_action:
-                daily_view.addActivity('habit', scene_pos.x(), scene_pos.y())
+            # Get the actual activity data
+            activity = None
+            for act_id, act_item in self.activity_items.items():
+                if act_id == activity_id:
+                    activity = act_item.activity
+                    break
+            
+            if activity:
+                menu = QMenu()
+                edit_action = menu.addAction("Edit Activity")
+                
+                # Toggle completion action
+                if activity.get('completed', False):
+                    complete_action = menu.addAction("Mark as Incomplete")
+                else:
+                    complete_action = menu.addAction("Mark as Complete")
+                
+                # Toggle local visibility action (for today only)
+                if activity.get('locally_hidden', False):
+                    hide_action = menu.addAction("Show Today")
+                else:
+                    hide_action = menu.addAction("Skip Today")
+                
+                delete_action = menu.addAction("Delete Activity")
+                
+                # Show menu and handle action
+                action = menu.exec(self.mapToGlobal(pos))
+                
+                # Find the DailyView parent to call appropriate methods
+                daily_view = None
+                parent = self.parent()
+                
+                # Walk up the parent chain until we find a DailyView
+                while parent:
+                    if isinstance(parent, DailyView):
+                        daily_view = parent
+                        break
+                    # Try to get the parent's parent
+                    if hasattr(parent, 'parent'):
+                        parent = parent.parent()
+                    else:
+                        break
+                
+                if daily_view:
+                    if action == edit_action:
+                        daily_view.editActivity(activity)
+                    elif action == complete_action:
+                        daily_view.toggleActivityStatus(activity)
+                    elif action == hide_action:
+                        daily_view.toggleActivityLocalVisibility(activity)
+                    elif action == delete_action:
+                        daily_view.deleteActivity(activity)
         else:
-            print("Error: Could not find DailyView parent to add activity")
+            # Only show context menu in the activity area (right of the time axis)
+            if scene_pos.x() < TIMELINE_LEFT_MARGIN:
+                return
+            
+            # Calculate the time at the clicked position
+            y_pos = scene_pos.y()
+            minutes_on_timeline = (y_pos / HOUR_HEIGHT) * 60
+            minutes_since_start = minutes_on_timeline + (TIMELINE_START_HOUR * 60)
+            
+            # Convert to hours and minutes
+            hours = int(minutes_since_start / 60)
+            minutes = int(minutes_since_start % 60)
+            
+            # Round minutes to the nearest 5
+            minutes = round(minutes / 5) * 5
+            if minutes == 60:
+                hours += 1
+                minutes = 0
+                
+            # Create time string to show in the menu
+            clicked_time = QTime(hours, minutes)
+            time_str = clicked_time.toString("h:mm AP")
+            
+            # Context menu for the timeline itself
+            menu = QMenu()
+            menu.addSection(f"At {time_str}")
+            add_task_action = menu.addAction("Add Task Here")
+            add_event_action = menu.addAction("Add Event Here")
+            add_habit_action = menu.addAction("Add Habit Here")
+            
+            # Show menu and handle action
+            action = menu.exec(self.mapToGlobal(pos))
+            
+            # Find the DailyView parent - might not be the direct parent
+            daily_view = None
+            parent = self.parent()
+            
+            # Walk up the parent chain until we find a DailyView
+            while parent:
+                if isinstance(parent, DailyView):
+                    daily_view = parent
+                    break
+                # Try to get the parent's parent
+                if hasattr(parent, 'parent'):
+                    parent = parent.parent()
+                else:
+                    break
+            
+            # Create activity at the clicked time if we found the DailyView
+            if daily_view:
+                if action == add_task_action:
+                    daily_view.addActivity('task', scene_pos.x(), scene_pos.y())
+                elif action == add_event_action:
+                    daily_view.addActivity('event', scene_pos.x(), scene_pos.y())
+                elif action == add_habit_action:
+                    daily_view.addActivity('habit', scene_pos.x(), scene_pos.y())
+            else:
+                print("Error: Could not find DailyView parent to add activity")
     
     def mousePressEvent(self, event):
         """Handle mouse press event."""
@@ -1177,6 +1237,8 @@ class DailyView(QWidget):
             # Set item text with HTML formatting
             if activity.get('completed', False):
                 item.setText(f"<span style='text-decoration: line-through; color: #9CA3AF;'><b>{time_range}</b> - {title} ({activity_type})</span>")
+            elif activity.get('locally_hidden', False):
+                item.setText(f"<span style='color: #9CA3AF; font-style: italic;'><b>{time_range}</b> - {title} ({activity_type}) [Skipped Today]</span>")
             else:
                 item.setText(f"<b>{time_range}</b> - {title} ({activity_type})")
             
@@ -1282,6 +1344,12 @@ class DailyView(QWidget):
         )
         toggle_action.setIcon(get_icon("check"))
         
+        # Add toggle visibility action
+        visibility_action = menu.addAction(
+            "Show Today" if activity.get('locally_hidden', False) else "Skip Today"
+        )
+        visibility_action.setIcon(get_icon("eye"))
+        
         delete_action = menu.addAction("Delete Activity")
         delete_action.setIcon(get_icon("delete"))
         
@@ -1292,6 +1360,8 @@ class DailyView(QWidget):
             self.editActivity(activity)
         elif action == toggle_action:
             self.toggleActivityStatus(activity)
+        elif action == visibility_action:
+            self.toggleActivityLocalVisibility(activity)
         elif action == delete_action:
             self.deleteActivity(activity)
     
@@ -1537,4 +1607,32 @@ class DailyView(QWidget):
                 self.refresh()
             except Exception as e:
                 print(f"Error adding activity: {e}")
-                QMessageBox.warning(self, "Error", f"Could not add activity: {str(e)}") 
+                QMessageBox.warning(self, "Error", f"Could not add activity: {str(e)}")
+    
+    def toggleActivityLocalVisibility(self, activity):
+        """Toggle the local visibility of an activity (skip for today only)."""
+        if not self.activities_manager:
+            return
+        
+        try:
+            # Toggle the locally hidden state
+            new_hidden_state = not activity.get('locally_hidden', False)
+            
+            # We don't persist this to the database as it's only for the current view/day
+            # Just update the activity in memory
+            activity['locally_hidden'] = new_hidden_state
+            
+            # Update the UI
+            for act_id, item in self.timeline_view.activity_items.items():
+                if act_id == activity['id']:
+                    item.activity['locally_hidden'] = new_hidden_state
+                    item.setupAppearance()  # Update appearance
+                    item.update()  # Force redraw
+                    break
+            
+            # Also update the activities list
+            self.updateActivitiesList(self.activities_manager.get_activities_for_date(self.current_date))
+            
+        except Exception as e:
+            print(f"Error toggling activity visibility: {e}")
+            QMessageBox.warning(self, "Error", f"Could not update activity visibility: {str(e)}") 
