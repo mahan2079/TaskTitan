@@ -247,32 +247,27 @@ class TaskTitanApp(QMainWindow):
         welcome_label.setStyleSheet("font-size: 22px; font-weight: bold; color: white;")
         header_layout.addWidget(welcome_label)
         
-        # Add quick action buttons in header
-        quick_task_btn = QPushButton("+ Quick Task")
-        quick_task_btn.setStyleSheet("""
+        # Add spacer to push welcome label to the left
+        header_layout.addStretch()
+        
+        # Add user menu button
+        user_menu_btn = QPushButton("User Menu")
+        user_menu_btn.setStyleSheet("""
             QPushButton {
-                background-color: white;
-                color: #6366F1;
+                background-color: #EEF2FF;
+                color: #4F46E5;
                 font-weight: bold;
-                padding: 8px 16px;
-                border-radius: 8px;
-                border: none;
+                padding: 6px 12px;
+                border-radius: 6px;
+                border: 1px solid #C7D2FE;
             }
             QPushButton:hover {
-                background-color: #EEF2FF;
+                background-color: #E0E7FF;
             }
         """)
-        quick_task_btn.setFixedWidth(150)
+        user_menu_btn.clicked.connect(self.showUserMenu)
+        header_layout.addWidget(user_menu_btn)
         
-        # Add icon from resources
-        add_icon = get_icon("add")
-        if not add_icon.isNull():
-            quick_task_btn.setIcon(add_icon)
-            quick_task_btn.setIconSize(QSize(16, 16))
-        
-        quick_task_btn.clicked.connect(self.addQuickTask)
-        
-        header_layout.addWidget(quick_task_btn)
         dashboard_layout.addWidget(header_frame)
         
         # Calendar widget card with enhanced styling
@@ -908,21 +903,11 @@ class TaskTitanApp(QMainWindow):
 
     def clearLayout(self, layout):
         """Clear all widgets from a layout."""
-        if layout is not None:
-            while layout.count():
-                item = layout.takeAt(0)
-                widget = item.widget()
-                if widget is not None:
-                    widget.deleteLater()
-                else:
-                    self.clearLayout(item.layout())
-
-    def addQuickTask(self):
-        """Show dialog to add a quick task."""
-        self.activitiesView.showAddTaskDialog()
-        # Switch to activities view after adding
-        self.changePage(1)
-
+        while layout.count():
+            child = layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+                
     def openDailyView(self, date):
         """Open the daily view for the selected date."""
         self.daily_view.setDate(date.toPyDate())

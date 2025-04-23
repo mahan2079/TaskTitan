@@ -856,11 +856,14 @@ class CalendarWithEventList(QWidget):
         scroll_area.setWidget(events_container)
         events_layout.addWidget(scroll_area)
         
-        # Add event button - make it more prominent and modern
-        self.add_button = QPushButton("+ Add New Event")
-        self.add_button.setMinimumHeight(48)  # Make button taller
-        self.add_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.add_button.setStyleSheet("""
+        # Add spacer to push content up
+        events_layout.addStretch()
+        
+        # Add shortcut to activities view
+        self.activities_shortcut = QPushButton("Add New Activity")
+        self.activities_shortcut.setMinimumHeight(48)
+        self.activities_shortcut.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.activities_shortcut.setStyleSheet("""
             QPushButton {
                 background-color: #6366F1;
                 color: white;
@@ -868,17 +871,13 @@ class CalendarWithEventList(QWidget):
                 border-radius: 10px;
                 padding: 12px 16px;
                 font-weight: bold;
-                font-size: 15px;
-                margin-top: 15px;
             }
             QPushButton:hover {
                 background-color: #4F46E5;
             }
-            QPushButton:pressed {
-                background-color: #4338CA;
-            }
         """)
-        events_layout.addWidget(self.add_button)
+        self.activities_shortcut.clicked.connect(self.openActivitiesView)
+        events_layout.addWidget(self.activities_shortcut)
         
         layout.addWidget(self.events_widget)
         
@@ -893,7 +892,7 @@ class CalendarWithEventList(QWidget):
         # Connect signals
         self.calendar.selectionChanged.connect(self.updateEventsList)
         self.calendar.dateDoubleClicked.connect(self.addEvent)
-        self.add_button.clicked.connect(self.addEvent)
+        self.activities_shortcut.clicked.connect(self.openActivitiesView)
         
         # Load synchronized activities initially
         self.syncWithActivitiesManager()
@@ -1397,40 +1396,16 @@ class CalendarWithEventList(QWidget):
     
     def deleteEvent(self, event):
         """Delete an event from the calendar."""
-        # Remove the event from the calendar
-        date_str = event["date"].toString("yyyy-MM-dd")
-        if date_str in self.calendar.events:
-            self.calendar.events[date_str] = [e for e in self.calendar.events[date_str] if e != event]
-            if not self.calendar.events[date_str]:
-                del self.calendar.events[date_str]
-        
-        # Get activity type for proper signal emission
-        activity_type = "event"
-        
-        # If connected to main app, also delete from activities manager
-        if self.main_window and hasattr(self.main_window, 'activities_manager') and 'activity_data' in event:
-            try:
-                # Extract the original activity ID
-                activity_id = event['activity_data'].get('id', None)
-                
-                if activity_id is not None:
-                    # Delete from activities manager
-                    self.main_window.activities_manager.delete_activity(activity_id)
-                    
-                    # Also update in activities view if it exists
-                    if hasattr(self.main_window, 'activitiesView'):
-                        # If the activities view has its own sync method, call it
-                        if hasattr(self.main_window.activitiesView, 'syncWithCalendar'):
-                            self.main_window.activitiesView.syncWithCalendar()
-                        
-                        # Emit the signal for activity deletion if the main window has it
-                        if hasattr(self.main_window, 'onActivityDeleted'):
-                            self.main_window.onActivityDeleted(activity_id, activity_type)
-            except Exception as e:
-                print(f"Error deleting event from activities manager: {e}")
-        
-        # Refresh the display
+        self.calendar.removeEvent(event)
         self.updateEventsList()
-        self.calendar.updateCells()
+        
+    def openActivitiesView(self):
+        """Open the activities view and switch to it."""
+        main_window = self.findMainWindow()
+        if main_window:
+            main_window.changePage(1)  # Switch to activities view (index 1)
+            # Trigger the add activity dialog
+            if hasattr(main_window, 'activities_view'):
+                main_window.activities_view.showAddActivityDialog('task')  # Default to task type
         
         return True 

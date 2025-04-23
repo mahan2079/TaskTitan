@@ -124,18 +124,20 @@ class ActivityTimelineItem(QGraphicsItem):
             completed = self.activity.get('completed', False)
             locally_hidden = self.activity.get('locally_hidden', False)
             
-            # Base colors for different activity types
-            color_map = {
-                'task': QColor(0, 120, 210),      # Blue
-                'meeting': QColor(180, 0, 180),   # Purple
-                'exercise': QColor(0, 140, 0),    # Green
-                'personal': QColor(200, 70, 0),   # Orange
-                'deadline': QColor(200, 0, 0),    # Red
-                'break': QColor(70, 70, 70),      # Gray
-            }
-            
-            # Get base color or use a default
-            base_color = color_map.get(activity_type, QColor(80, 80, 80))
+            # Use the activity's custom color if available, otherwise use type-based colors
+            if 'color' in self.activity and self.activity['color']:
+                base_color = QColor(self.activity['color'])
+            else:
+                # Base colors for different activity types
+                color_map = {
+                    'task': QColor(0, 120, 210),      # Blue
+                    'meeting': QColor(180, 0, 180),   # Purple
+                    'exercise': QColor(0, 140, 0),    # Green
+                    'personal': QColor(200, 70, 0),   # Orange
+                    'deadline': QColor(200, 0, 0),    # Red
+                    'break': QColor(70, 70, 70),      # Gray
+                }
+                base_color = color_map.get(activity_type, QColor(80, 80, 80))
             
             # Adjust color based on state
             if completed:
@@ -2591,18 +2593,21 @@ class DailyView(QWidget):
             bg_color = "#FAFAFA"
             border_color = "#EEEEEE"
         else:
-            # Use a lighter shade of the activity type color
-            if activity_type == 'task':
-                base_color = COLORS["task"]
-            elif activity_type == 'event':
-                base_color = COLORS["event"]
-            else:  # habit
-                base_color = COLORS["habit"]
-                
-            # Convert to QColor for manipulation
-            base_qcolor = QColor(base_color)
-            bg_color = base_qcolor.lighter(180).name()
-            border_color = base_qcolor.name()
+            # Use the activity's custom color if available, otherwise fall back to type-based colors
+            if 'color' in activity and activity['color']:
+                base_color = QColor(activity['color'])
+            else:
+                # Use a lighter shade of the activity type color
+                if activity_type == 'task':
+                    base_color = COLORS["task"]
+                elif activity_type == 'event':
+                    base_color = COLORS["event"]
+                else:  # habit
+                    base_color = COLORS["habit"]
+            
+            # Create a lighter shade for the background
+            bg_color = base_color.lighter(150).name()
+            border_color = base_color.name()
         
         # Style the card
         card.setStyleSheet(f"""
