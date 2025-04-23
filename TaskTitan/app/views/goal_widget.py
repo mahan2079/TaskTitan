@@ -7,8 +7,9 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                            QTimeEdit, QComboBox, QDialogButtonBox, QMessageBox, QMenu,
                            QTabWidget, QGraphicsView, QGraphicsScene, QGraphicsRectItem, 
                            QGraphicsTextItem, QGraphicsLineItem, QSlider, QGraphicsItem,
-                           QGraphicsSceneWheelEvent, QGraphicsPathItem, QGraphicsEllipseItem)
-from PyQt6.QtCore import Qt, QDate, QTime, pyqtSignal, QRectF, QPointF, QTimer
+                           QGraphicsSceneWheelEvent, QGraphicsPathItem, QGraphicsEllipseItem,
+                           QGraphicsDropShadowEffect)
+from PyQt6.QtCore import Qt, QDate, QTime, pyqtSignal, QRectF, QPointF, QTimer, QEvent, QPoint
 from PyQt6.QtGui import QIcon, QFont, QColor, QPen, QBrush, QWheelEvent, QPainter, QPainterPath
 from datetime import datetime, timedelta
 import random
@@ -92,6 +93,9 @@ class CustomGraphicsView(QGraphicsView):
         self.parent = parent
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        
+        # Track current dialog to avoid multiple dialogs
+        self.active_dialog = None
     
     def wheelEvent(self, event):
         """Handle mouse wheel events for zooming."""
@@ -113,6 +117,126 @@ class CustomGraphicsView(QGraphicsView):
         else:
             # Normal scrolling
             super().wheelEvent(event)
+    
+    def mousePressEvent(self, event):
+        """Handle mouse press events to show goal details."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Get the item under mouse
+            scene_pos = self.mapToScene(event.pos())
+            items = self.scene().items(scene_pos)
+            
+            # Find the goal rectangle item (filter for QGraphicsRectItem)
+            goal_rect = None
+            for item in items:
+                if isinstance(item, QGraphicsRectItem) and hasattr(item, 'data') and item.data(0):
+                    goal_rect = item
+                    break
+            
+            if goal_rect:
+                # Get the goal data
+                goal_id = goal_rect.data(0)
+                if hasattr(self.parent, 'parent') and hasattr(self.parent.parent, 'goals'):
+                    # Find goal data
+                    goal = None
+                    for g in self.parent.parent.goals:
+                        if g['id'] == goal_id:
+                            goal = g
+                            break
+                            
+                    if goal:
+                        self.showGoalDetailsDialog(goal, event.globalPos())
+                        return  # Don't pass to parent handler
+        
+        # Default handling for other cases
+        super().mousePressEvent(event)
+    
+    def showGoalDetailsDialog(self, goal, position):
+        """Show a custom dialog with goal details at the specified position."""
+        # Close existing dialog if present
+        if self.active_dialog and self.active_dialog.isVisible():
+            self.active_dialog.close()
+        
+        # Create a custom dialog
+        dialog = QDialog(self)
+        dialog.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Popup)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Set fixed position near the mouse position
+        dialog.move(position + QPoint(10, 10))
+        
+        # Create layout
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create content frame
+        content = QFrame()
+        content.setStyleSheet("""
+            QFrame {
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 8px;
+            }
+            QLabel {
+                color: #000000;
+                padding: 4px 0px;
+            }
+            QLabel#titleLabel {
+                font-size: 14px;
+                font-weight: bold;
+                color: #000000;
+            }
+        """)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(12, 12, 12, 12)
+        
+        # Add goal details
+        title_label = QLabel(goal['title'])
+        title_label.setObjectName("titleLabel")
+        content_layout.addWidget(title_label)
+        
+        # Calculate progress
+        progress = 0
+        if hasattr(self.parent, 'parent'):
+            parent_widget = self.parent.parent
+            if hasattr(parent_widget, 'calculateGoalProgress'):
+                progress = parent_widget.calculateGoalProgress(goal)
+        
+        # Format goal information
+        due_date_str = f"Due: {goal['due_date']} {goal['due_time']}"
+        progress_str = f"Progress: {progress}%"
+        status_str = "Status: Completed" if goal['completed'] else "Status: In Progress"
+        
+        due_label = QLabel(due_date_str)
+        progress_label = QLabel(progress_str)
+        status_label = QLabel(status_str)
+        
+        # Style status label based on completion
+        if goal['completed']:
+            status_label.setStyleSheet("color: #10B981; font-weight: bold;")  # Green for completed
+        else:
+            status_label.setStyleSheet("color: #3B82F6; font-weight: bold;")  # Blue for in progress
+        
+        content_layout.addWidget(due_label)
+        content_layout.addWidget(progress_label)
+        content_layout.addWidget(status_label)
+        
+        layout.addWidget(content)
+        
+        # Track this dialog
+        self.active_dialog = dialog
+        
+        # Auto-close the dialog when clicked outside
+        dialog.installEventFilter(self)
+        
+        # Show dialog
+        dialog.show()
+    
+    def eventFilter(self, obj, event):
+        """Event filter to close dialog when clicked outside."""
+        if obj == self.active_dialog and event.type() == QEvent.Type.MouseButtonPress:
+            obj.close()
+            return True
+        return super().eventFilter(obj, event)
 
 class AddGoalDialog(QDialog):
     """Dialog for adding or editing goals with start date."""
@@ -122,6 +246,53 @@ class AddGoalDialog(QDialog):
         self.setWindowTitle(title)
         self.setMinimumWidth(400)
         self.goal_data = goal_data or {}
+        
+        # Set dialog styling
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #FFFFFF;
+            }
+            QLabel {
+                color: #000000;
+                font-weight: bold;
+            }
+            QLineEdit, QDateEdit, QTimeEdit, QComboBox {
+                background-color: #F9FAFB;
+                border: 1px solid #D1D5DB;
+                border-radius: 4px;
+                padding: 6px;
+                color: #000000;
+                font-weight: 500;
+            }
+            QLineEdit:focus, QDateEdit:focus, QTimeEdit:focus, QComboBox:focus {
+                border: 1px solid #4F46E5;
+            }
+            QPushButton {
+                background-color: #4F46E5;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #4338CA;
+            }
+            QPushButton:pressed {
+                background-color: #3730A3;
+            }
+            QDialogButtonBox {
+                background-color: #F9FAFB;
+                border-top: 1px solid #E5E7EB;
+                padding: 10px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #FFFFFF;
+                color: #000000;
+                selection-background-color: #EEF2FF;
+                selection-color: #000000;
+            }
+        """)
         
         self.setupUI()
         
@@ -627,8 +798,18 @@ class GoalTimelineWidget(QWidget):
             rect.setPen(QPen(color.darker(), 1))
             rect.setBrush(QBrush(color.lighter()))
             
+            # Store goal ID as item data for identification in click handler
+            rect.setData(0, goal['id'])
+            
             # Include progress percentage in the tooltip
-            rect.setToolTip(f"{goal['title']}\nDue: {goal['due_date']} {goal['due_time']}\nProgress: {progress_percentage}%")
+            tooltip_html = f"""
+            <div style='background-color:#FFFFFF; color:#000000; padding:8px; border:1px solid #D1D5DB; border-radius:4px; font-weight:bold;'>
+                <span style='font-size:14px;'>{goal['title']}</span><br/>
+                <span style='font-size:12px;'>Due: {goal['due_date']} {goal['due_time']}</span><br/>
+                <span style='font-size:12px;'>Progress: {progress_percentage}%</span>
+            </div>
+            """
+            rect.setToolTip(tooltip_html)
             
             # Add a small circular progress indicator if not completed
             if not goal['completed'] and progress_percentage > 0:
@@ -709,10 +890,18 @@ class GoalTimelineWidget(QWidget):
                 font.setPointSize(7)
             else:
                 font.setPointSize(8)
+            font.setBold(True)  # Make text bold for better visibility
             text.setFont(font)
             
-            # Set text color to black for better contrast
-            text.setDefaultTextColor(QColor("#000000"))
+            # Set text color to dark gray for better contrast
+            text.setDefaultTextColor(QColor("#1F2937"))  # Dark gray color for better readability
+            
+            # Add white text outline for better contrast on any background
+            text_effect = QGraphicsDropShadowEffect()
+            text_effect.setColor(QColor("#FFFFFF"))
+            text_effect.setBlurRadius(0)
+            text_effect.setOffset(1, 1)
+            text.setGraphicsEffect(text_effect)
             
             # Add to scene
             self.scene.addItem(rect)
