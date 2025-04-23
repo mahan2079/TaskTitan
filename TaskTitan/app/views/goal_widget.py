@@ -518,6 +518,7 @@ class GoalTimelineWidget(QWidget):
                 month_label = QGraphicsTextItem(current_date.strftime("%b %Y"))
                 month_label.setPos(x_pos - 20, -30)
                 month_label.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+                month_label.setDefaultTextColor(QColor("#000000"))  # Set text color to black for better contrast
                 self.scene.addItem(month_label)
                 current_month = current_date.month
             
@@ -526,6 +527,7 @@ class GoalTimelineWidget(QWidget):
                 date_label = QGraphicsTextItem(current_date.strftime("%d"))
                 date_label.setPos(x_pos - 5, 10)
                 date_label.setFont(QFont("Arial", 8))
+                date_label.setDefaultTextColor(QColor("#000000"))  # Set text color to black for better contrast
                 self.scene.addItem(date_label)
             
             # Highlight weekends
@@ -665,6 +667,7 @@ class GoalTimelineWidget(QWidget):
                 progress_text = QGraphicsTextItem(f"{progress_percentage}%")
                 progress_text.setPos(circle_x - 5, circle_y + progress_diameter + 2)
                 progress_text.setFont(QFont("Arial", 7))
+                progress_text.setDefaultTextColor(QColor("#000000"))  # Set text color to black for better contrast
                 
                 self.scene.addItem(progress_circle)
                 self.scene.addItem(progress_arc)
@@ -707,6 +710,9 @@ class GoalTimelineWidget(QWidget):
             else:
                 font.setPointSize(8)
             text.setFont(font)
+            
+            # Set text color to black for better contrast
+            text.setDefaultTextColor(QColor("#000000"))
             
             # Add to scene
             self.scene.addItem(rect)
