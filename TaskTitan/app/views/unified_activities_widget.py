@@ -16,6 +16,7 @@ class ActivityItemWidget(QWidget):
     activityCompleted = pyqtSignal(int, bool, str)  # id, completed, type
     activityDeleted = pyqtSignal(int, str)  # id, type
     activityEdited = pyqtSignal(int, str)  # id, type
+    activityClicked = pyqtSignal(dict)  # Full activity data
     
     def __init__(self, activity_id, title, start_time, end_time, activity_type, 
                  priority=0, category=None, completed=False, color=None, parent=None):
@@ -32,11 +33,25 @@ class ActivityItemWidget(QWidget):
         self.completed = completed
         self.custom_color = color  # Store custom color
         
+        # Store full activity data for details dialog
+        self.activity_data = {
+            'id': activity_id,
+            'title': title,
+            'description': title,
+            'start_time': start_time,
+            'end_time': end_time,
+            'type': activity_type,
+            'priority': priority,
+            'category': category,
+            'completed': completed,
+            'color': color
+        }
+        
         # Configure widget
         self.setObjectName("activityWidget")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.setMinimumHeight(60)
+        self.setMinimumHeight(300)  # Increased from 180 to 300
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
         # Set up the UI
@@ -44,14 +59,26 @@ class ActivityItemWidget(QWidget):
         
         # Apply shadow effect
         self.applyShadowEffect()
+        
+        # Connect mouse events
+        self.mousePressEvent = self.onMousePress
+    
+    def onMousePress(self, event):
+        """Handle mouse press events to show details dialog."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Show activity details dialog
+            dialog = ActivityDetailsDialog(self.activity_data, self)
+            dialog.show()
+            # Also emit signal for any parent listeners
+            self.activityClicked.emit(self.activity_data)
     
     def setupUI(self):
         """Set up the UI components of the activity widget."""
         
         # Main layout
         self.main_layout = QHBoxLayout(self)
-        self.main_layout.setContentsMargins(10, 8, 10, 8)
-        self.main_layout.setSpacing(8)
+        self.main_layout.setContentsMargins(20, 40, 20, 40)  # Doubled vertical padding
+        self.main_layout.setSpacing(40)  # Increased from 24 to 40
         
         # Checkbox for completion status
         self.checkbox = QCheckBox()
@@ -59,54 +86,56 @@ class ActivityItemWidget(QWidget):
         self.checkbox.setObjectName("activityCheckbox")
         self.checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
         self.checkbox.toggled.connect(self.onCompletionToggled)
+        self.checkbox.setFixedHeight(90)  # Increased from 60 to 90
         self.main_layout.addWidget(self.checkbox)
         
         # Activity type icon
         self.type_icon_label = QLabel()
-        self.type_icon_label.setFixedSize(16, 16)
+        self.type_icon_label.setFixedSize(72, 72)  # Increased from 48x48 to 72x72
         
         # Set icon based on activity type
         if self.activity_type == 'task':
             task_icon = get_icon("task")
             if not task_icon.isNull():
-                self.type_icon_label.setPixmap(task_icon.pixmap(QSize(16, 16)))
+                self.type_icon_label.setPixmap(task_icon.pixmap(QSize(72, 72)))
             else:
                 # Fallback to emoji
                 self.type_icon_label.setText("✓")
-                self.type_icon_label.setStyleSheet("color: #F87171; font-weight: bold;")
+                self.type_icon_label.setStyleSheet("color: #F87171; font-weight: bold; font-size: 36px;")  # Increased font
         elif self.activity_type == 'event':
             event_icon = get_icon("event")
             if not event_icon.isNull():
-                self.type_icon_label.setPixmap(event_icon.pixmap(QSize(16, 16)))
+                self.type_icon_label.setPixmap(event_icon.pixmap(QSize(72, 72)))
             else:
                 # Fallback to emoji
                 self.type_icon_label.setText("📅")
-                self.type_icon_label.setStyleSheet("color: #818CF8;")
+                self.type_icon_label.setStyleSheet("color: #818CF8; font-size: 36px;")  # Increased font
         elif self.activity_type == 'habit':
             habit_icon = get_icon("habit")
             if not habit_icon.isNull():
-                self.type_icon_label.setPixmap(habit_icon.pixmap(QSize(16, 16)))
+                self.type_icon_label.setPixmap(habit_icon.pixmap(QSize(72, 72)))
             else:
                 # Fallback to emoji
                 self.type_icon_label.setText("↻")
-                self.type_icon_label.setStyleSheet("color: #34D399; font-weight: bold;")
+                self.type_icon_label.setStyleSheet("color: #34D399; font-weight: bold; font-size: 36px;")  # Increased font
                 
         self.main_layout.addWidget(self.type_icon_label)
         
         # Container for all text information
         self.text_container = QVBoxLayout()
-        self.text_container.setSpacing(2)
+        self.text_container.setSpacing(24)  # Doubled from 12 to 24
         
         # Activity title
         self.title_label = QLabel(self.title)
         self.title_label.setObjectName("activityTitle")
         font = QFont()
-        font.setPointSize(10)
+        font.setPointSize(24)  # Increased from 16 to 24
         if self.completed:
-            self.title_label.setStyleSheet("text-decoration: line-through; color: #6B7280;")
+            self.title_label.setStyleSheet("text-decoration: line-through; color: #6B7280; font-size: 24pt;")
         else:
             font.setBold(True)
             self.title_label.setFont(font)
+        self.title_label.setMinimumHeight(90)  # Doubled from 45 to 90
         self.text_container.addWidget(self.title_label)
         
         # Activity details (time, category, type)
@@ -125,31 +154,39 @@ class ActivityItemWidget(QWidget):
         details_text += f"• {self.activity_type.capitalize()}"
             
         self.details_label.setText(details_text)
-        self.details_label.setStyleSheet("color: #6B7280; font-size: 9pt;")
+        self.details_label.setStyleSheet("color: #6B7280; font-size: 20pt;")  # Increased from 13pt to 20pt
+        self.details_label.setMinimumHeight(72)  # Doubled from 36 to 72
         self.text_container.addWidget(self.details_label)
+        
+        # Add description label (additional info)
+        description_label = QLabel("This is a larger activity item with additional details for better visibility.")
+        description_label.setWordWrap(True)
+        description_label.setStyleSheet("color: #4B5563; font-size: 18pt;")  # Increased from 12pt to 18pt
+        description_label.setMinimumHeight(60)  # Doubled from 30 to 60
+        self.text_container.addWidget(description_label)
         
         self.main_layout.addLayout(self.text_container)
         
         # Priority indicator (for tasks)
         if self.activity_type == 'task':
             self.priority_indicator = QWidget()
-            self.priority_indicator.setFixedSize(12, 12)
+            self.priority_indicator.setFixedSize(54, 54)  # Increased from 36x36 to 54x54
             self.priority_indicator.setObjectName("priorityIndicator")
             
             if self.priority == 0:  # Low
                 self.priority_indicator.setStyleSheet("""
                     background-color: #10B981;
-                    border-radius: 6px;
+                    border-radius: 27px;
                 """)
             elif self.priority == 1:  # Medium
                 self.priority_indicator.setStyleSheet("""
                     background-color: #F59E0B;
-                    border-radius: 6px;
+                    border-radius: 27px;
                 """)
             elif self.priority == 2:  # High
                 self.priority_indicator.setStyleSheet("""
                     background-color: #EF4444;
-                    border-radius: 6px;
+                    border-radius: 27px;
                 """)
                 
             self.main_layout.addWidget(self.priority_indicator)
@@ -162,16 +199,17 @@ class ActivityItemWidget(QWidget):
             self.actions_btn.setIcon(more_icon)
         else:
             self.actions_btn.setText("...")
-        self.actions_btn.setFixedSize(24, 24)
+        self.actions_btn.setFixedSize(72, 72)  # Increased from 48x48 to 72x72
         self.actions_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.actions_btn.setStyleSheet("""
             QPushButton {
                 border: none;
                 background-color: transparent;
+                font-size: 24px;  /* Increased from 18px */
             }
             QPushButton:hover {
                 background-color: #F3F4F6;
-                border-radius: 12px;
+                border-radius: 36px;  /* Increased from 24px */
             }
             QPushButton:pressed {
                 background-color: #E5E7EB;
@@ -190,26 +228,30 @@ class ActivityItemWidget(QWidget):
             self.setStyleSheet("""
                 #activityWidget {
                     background-color: #F9FAFB;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 8px;
+                    border: 2px solid #E5E7EB;  /* Increased border width */
+                    border-radius: 12px;  /* Increased radius */
                 }
                 #activityTitle {
                     text-decoration: line-through;
                     color: #6B7280;
+                    font-size: 24pt;  /* Increased from 16pt */
+                    padding: 12px 0;  /* Doubled padding */
                 }
             """)
         else:
             self.setStyleSheet("""
                 #activityWidget {
                     background-color: #FFFFFF;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 8px;
+                    border: 2px solid #E5E7EB;  /* Increased border width */
+                    border-radius: 12px;  /* Increased radius */
                 }
                 #activityTitle {
                     color: #1F2937;
+                    font-size: 24pt;  /* Increased from 16pt */
+                    padding: 12px 0;  /* Doubled padding */
                 }
                 #activityWidget:hover {
-                    border: 1px solid #D1D5DB;
+                    border: 2px solid #D1D5DB;  /* Increased border width */
                     background-color: #F9FAFB;
                 }
             """)
@@ -218,7 +260,7 @@ class ActivityItemWidget(QWidget):
             if self.custom_color:
                 self.setStyleSheet(self.styleSheet() + f"""
                     #activityWidget {{
-                        border-left: 4px solid {self.custom_color};
+                        border-left: 24px solid {self.custom_color};  /* Doubled from 12px */
                     }}
                 """)
             else:
@@ -226,19 +268,19 @@ class ActivityItemWidget(QWidget):
                 if self.activity_type == 'event':
                     self.setStyleSheet(self.styleSheet() + """
                         #activityWidget {
-                            border-left: 4px solid #818CF8;
+                            border-left: 24px solid #818CF8;  /* Doubled from 12px */
                         }
                     """)
                 elif self.activity_type == 'habit':
                     self.setStyleSheet(self.styleSheet() + """
                         #activityWidget {
-                            border-left: 4px solid #34D399;
+                            border-left: 24px solid #34D399;  /* Doubled from 12px */
                         }
                     """)
                 elif self.activity_type == 'task':
                     self.setStyleSheet(self.styleSheet() + """
                         #activityWidget {
-                            border-left: 4px solid #F87171;
+                            border-left: 24px solid #F87171;  /* Doubled from 12px */
                         }
                     """)
     
@@ -248,12 +290,12 @@ class ActivityItemWidget(QWidget):
         
         # Update title appearance
         if checked:
-            self.title_label.setStyleSheet("text-decoration: line-through; color: #6B7280;")
+            self.title_label.setStyleSheet("text-decoration: line-through; color: #6B7280; font-size: 24pt;")
             font = self.title_label.font()
             font.setBold(False)
             self.title_label.setFont(font)
         else:
-            self.title_label.setStyleSheet("color: #1F2937;")
+            self.title_label.setStyleSheet("color: #1F2937; font-size: 24pt;")
             font = self.title_label.font()
             font.setBold(True)
             self.title_label.setFont(font)
@@ -585,6 +627,351 @@ class ActivityAddEditDialog(QDialog):
         return data
 
 
+class ActivityDetailsDialog(QDialog):
+    """Dialog for displaying activity details when clicked in the activities list."""
+    
+    def __init__(self, activity, parent=None):
+        super().__init__(parent)
+        self.activity = activity
+        self.setWindowTitle("Activity Details")
+        
+        # Use minimum size instead of fixed size for better adaptability
+        self.setMinimumSize(400, 350)
+        
+        # Store the parent properly to ensure button connections work
+        self.parent_widget = parent
+        
+        self.setupUI()
+        
+    def setupUI(self):
+        """Set up the UI for the activity details dialog."""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Set dialog styling with improved contrast
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #FFFFFF;
+                border-radius: 8px;
+                border: 1px solid #D1D5DB;
+            }
+            QLabel {
+                color: #1F2937;
+                font-size: 14px;
+            }
+            QLabel#title {
+                font-size: 18px;
+                font-weight: bold;
+                color: #111827;
+            }
+            QLabel#subtitle {
+                font-size: 16px;  
+                font-weight: bold;
+                color: #4B5563;
+            }
+            QLabel#sectionHeader {
+                font-size: 16px;
+                font-weight: bold;
+                color: #374151;
+                margin-top: 10px;
+            }
+            QPushButton {
+                background-color: #F3F4F6;
+                border: 1px solid #D1D5DB;
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: #374151;
+                font-weight: bold;
+                font-size: 13px;
+                min-height: 36px;
+            }
+            QPushButton:hover {
+                background-color: #E5E7EB;
+            }
+            QPushButton#primaryBtn {
+                background-color: #4F46E5;
+                color: white;
+                border: none;
+            }
+            QPushButton#primaryBtn:hover {
+                background-color: #4338CA;
+            }
+            QPushButton#deleteBtn {
+                background-color: #FEE2E2;
+                color: #B91C1C;
+                border: 1px solid #FECACA;
+            }
+            QPushButton#deleteBtn:hover {
+                background-color: #FEE2E2;
+                color: #991B1B;
+            }
+            QFrame#detailsItem {
+                background-color: #F9FAFB;
+                border-radius: 6px;
+                padding: 10px;
+                border: 1px solid #E5E7EB;
+            }
+            QLabel#icon {
+                font-size: 18px;
+                min-width: 30px;
+            }
+        """)
+        
+        # Activity header with type indicator
+        header_layout = QHBoxLayout()
+        
+        # Activity type indicator
+        type_indicator = QFrame()
+        type_indicator.setFixedSize(32, 32)
+        
+        activity_type = self.activity.get('type', '')
+        if activity_type == 'task':
+            type_indicator.setStyleSheet("background-color: #F87171; border-radius: 16px;")
+        elif activity_type == 'event':
+            type_indicator.setStyleSheet("background-color: #818CF8; border-radius: 16px;")
+        elif activity_type == 'habit':
+            type_indicator.setStyleSheet("background-color: #34D399; border-radius: 16px;")
+        else:
+            type_indicator.setStyleSheet("background-color: #9CA3AF; border-radius: 16px;")
+            
+        header_layout.addWidget(type_indicator)
+        
+        # Activity title layout
+        title_layout = QVBoxLayout()
+        title_label = QLabel(self.activity.get('title', self.activity.get('description', 'Untitled')))
+        title_label.setObjectName("title")
+        title_label.setWordWrap(True)
+        title_layout.addWidget(title_label)
+        
+        # Activity type subtitle
+        type_label = QLabel(f"{activity_type.capitalize()}")
+        type_label.setObjectName("subtitle")
+        title_layout.addWidget(type_label)
+        
+        header_layout.addLayout(title_layout, 1)
+        layout.addLayout(header_layout)
+        
+        # Add a separator line
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        separator.setStyleSheet("background-color: #E5E7EB; border: none; height: 2px;")
+        layout.addWidget(separator)
+        
+        # Details section
+        details_section = QLabel("Details")
+        details_section.setObjectName("sectionHeader")
+        layout.addWidget(details_section)
+        
+        # Time information with better contrast
+        if self.activity.get('start_time') and self.activity.get('end_time'):
+            time_frame = QFrame()
+            time_frame.setObjectName("detailsItem")
+            time_layout = QHBoxLayout(time_frame)
+            time_layout.setContentsMargins(10, 10, 10, 10)
+            
+            time_icon = QLabel("⏱")
+            time_icon.setObjectName("icon")
+            time_icon.setFixedWidth(30)
+            time_layout.addWidget(time_icon)
+            
+            # Format the time appropriately based on data type
+            start_time = self.activity.get('start_time')
+            end_time = self.activity.get('end_time')
+            
+            if isinstance(start_time, str) and isinstance(end_time, str):
+                time_str = f"Time: {start_time} - {end_time}"
+            else:
+                time_str = f"Time: {start_time.toString('HH:mm')} - {end_time.toString('HH:mm')}"
+                
+            time_label = QLabel(time_str)
+            time_layout.addWidget(time_label)
+            time_layout.addStretch()
+            layout.addWidget(time_frame)
+        
+        # Category with better contrast
+        if self.activity.get('category'):
+            category_frame = QFrame()
+            category_frame.setObjectName("detailsItem")
+            category_layout = QHBoxLayout(category_frame)
+            category_layout.setContentsMargins(10, 10, 10, 10)
+            
+            category_icon = QLabel("🏷️")
+            category_icon.setObjectName("icon")
+            category_icon.setFixedWidth(30)
+            category_layout.addWidget(category_icon)
+            
+            category_label = QLabel(f"Category: {self.activity.get('category')}")
+            category_layout.addWidget(category_label)
+            category_layout.addStretch()
+            layout.addWidget(category_frame)
+        
+        # Priority (for tasks) with better contrast
+        if self.activity.get('type') == 'task' and 'priority' in self.activity:
+            priority_map = {0: "Low", 1: "Medium", 2: "High"}
+            priority_value = self.activity.get('priority')
+            priority_name = priority_map.get(priority_value, "Unknown")
+            
+            priority_frame = QFrame()
+            priority_frame.setObjectName("detailsItem")
+            priority_layout = QHBoxLayout(priority_frame)
+            priority_layout.setContentsMargins(10, 10, 10, 10)
+            
+            priority_icon = QLabel("⚠️")
+            priority_icon.setObjectName("icon")
+            priority_icon.setFixedWidth(30)
+            priority_layout.addWidget(priority_icon)
+            
+            priority_label = QLabel(f"Priority: {priority_name}")
+            priority_layout.addWidget(priority_label)
+            priority_layout.addStretch()
+            layout.addWidget(priority_frame)
+        
+        # Completed status with better contrast
+        status_frame = QFrame()
+        status_frame.setObjectName("detailsItem")
+        status_layout = QHBoxLayout(status_frame)
+        status_layout.setContentsMargins(10, 10, 10, 10)
+        
+        status_icon = QLabel("✅" if self.activity.get('completed') else "⏳")
+        status_icon.setObjectName("icon")
+        status_icon.setFixedWidth(30)
+        status_layout.addWidget(status_icon)
+        
+        status_label = QLabel(f"Status: {'Completed' if self.activity.get('completed') else 'Pending'}")
+        status_layout.addWidget(status_label)
+        status_layout.addStretch()
+        layout.addWidget(status_frame)
+        
+        layout.addStretch()
+        
+        # Add buttons for quick actions
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+        
+        if not self.activity.get('completed'):
+            complete_btn = QPushButton("✓ Complete")
+            complete_btn.setObjectName("primaryBtn")
+            complete_btn.clicked.connect(self.markComplete)
+            btn_layout.addWidget(complete_btn)
+        
+        edit_btn = QPushButton("✏️ Edit")
+        edit_btn.clicked.connect(self.editActivity)
+        btn_layout.addWidget(edit_btn)
+        
+        delete_btn = QPushButton("🗑️ Delete")
+        delete_btn.setObjectName("deleteBtn")
+        delete_btn.clicked.connect(self.deleteActivity)
+        btn_layout.addWidget(delete_btn)
+        
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        btn_layout.addWidget(close_btn)
+        
+        layout.addLayout(btn_layout)
+    
+    def markComplete(self):
+        """Mark the activity as complete."""
+        try:
+            # First try direct parent
+            if hasattr(self.parent_widget, 'onActivityCompleted'):
+                self.parent_widget.onActivityCompleted(self.activity.get('id'), self.activity.get('type'))
+                self.close()
+                return
+            
+            # Then try unified activities widget
+            if hasattr(self.parent_widget, 'activities_manager'):
+                self.parent_widget.activities_manager.toggle_activity_completion(
+                    self.activity.get('id'), True)
+                self.parent_widget.refreshActivitiesList()
+                self.close()
+                return
+                    
+            # As a fallback, try to find the activities manager through any parent
+            parent = self.parent_widget
+            while parent:
+                if hasattr(parent, 'onActivityCompleted'):
+                    parent.onActivityCompleted(self.activity.get('id'), self.activity.get('type'))
+                    self.close()
+                    break
+                elif hasattr(parent, 'activities_manager'):
+                    parent.activities_manager.toggle_activity_completion(
+                        self.activity.get('id'), True)
+                    if hasattr(parent, 'refreshActivitiesList'):
+                        parent.refreshActivitiesList()
+                    self.close()
+                    break
+                if hasattr(parent, 'parent'):
+                    parent = parent.parent()
+                else:
+                    break
+                    
+        except Exception as e:
+            print(f"Error marking activity complete: {e}")
+            # At least close the dialog even if operation failed
+            self.close()
+    
+    def editActivity(self):
+        """Open the edit dialog for this activity."""
+        try:
+            # First try direct parent
+            if hasattr(self.parent_widget, 'showEditActivityDialog'):
+                self.parent_widget.showEditActivityDialog(self.activity.get('id'), self.activity.get('type'))
+                self.close()
+                return
+                
+            # As a fallback, try to find the edit method through any parent
+            parent = self.parent_widget
+            while parent:
+                if hasattr(parent, 'showEditActivityDialog'):
+                    parent.showEditActivityDialog(self.activity.get('id'), self.activity.get('type'))
+                    self.close()
+                    break
+                if hasattr(parent, 'parent'):
+                    parent = parent.parent()
+                else:
+                    break
+                    
+        except Exception as e:
+            print(f"Error editing activity: {e}")
+            # At least close the dialog even if operation failed
+            self.close()
+    
+    def deleteActivity(self):
+        """Delete this activity."""
+        try:
+            # First try direct parent
+            if hasattr(self.parent_widget, 'deleteActivity'):
+                self.parent_widget.deleteActivity(self.activity.get('id'), self.activity.get('type'))
+                self.close()
+                return
+                
+            # As a fallback, try to find the activities manager through any parent
+            parent = self.parent_widget
+            while parent:
+                if hasattr(parent, 'deleteActivity'):
+                    parent.deleteActivity(self.activity.get('id'), self.activity.get('type'))
+                    self.close()
+                    break
+                elif hasattr(parent, 'activities_manager'):
+                    parent.activities_manager.delete_activity(self.activity.get('id'))
+                    if hasattr(parent, 'refreshActivitiesList'):
+                        parent.refreshActivitiesList()
+                    self.close()
+                    break
+                if hasattr(parent, 'parent'):
+                    parent = parent.parent()
+                else:
+                    break
+                    
+        except Exception as e:
+            print(f"Error deleting activity: {e}")
+            # At least close the dialog even if operation failed
+            self.close()
+
+
 class UnifiedActivitiesWidget(QWidget):
     """A widget that unifies tasks, events, and habits into a single view."""
     
@@ -637,30 +1024,30 @@ class UnifiedActivitiesWidget(QWidget):
         # Header
         header = QWidget()
         header.setObjectName("activitiesHeader")
-        header.setMinimumHeight(60)
+        header.setMinimumHeight(180)  # Increased from 120 to 180
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(20, 10, 20, 10)
+        header_layout.setContentsMargins(60, 30, 60, 30)  # Increased margins
         
         # Title with icon
         title_layout = QHBoxLayout()
-        title_layout.setSpacing(8)
+        title_layout.setSpacing(24)  # Increased from 16 to 24
         
         # Add activities icon
         activities_icon_label = QLabel()
-        activities_icon = get_icon("calendar")  # or use any appropriate icon
+        activities_icon = get_icon("calendar")
         if not activities_icon.isNull():
-            activities_icon_label.setPixmap(activities_icon.pixmap(QSize(24, 24)))
+            activities_icon_label.setPixmap(activities_icon.pixmap(QSize(72, 72)))  # Increased from 48x48
         else:
             # Fallback to emoji icon
             activities_icon_label.setText("📅")
-            activities_icon_label.setFont(QFont("Arial", 14))
+            activities_icon_label.setFont(QFont("Arial", 36))  # Increased from 28
         title_layout.addWidget(activities_icon_label)
         
         # Title text
         title = QLabel("My Activities")
         title.setObjectName("activitiesTitle")
         font = QFont()
-        font.setPointSize(14)
+        font.setPointSize(32)  # Increased from 22
         font.setBold(True)
         title.setFont(font)
         title_layout.addWidget(title)
@@ -672,17 +1059,18 @@ class UnifiedActivitiesWidget(QWidget):
         
         prev_day_btn = QPushButton()
         prev_day_btn.setIcon(QIcon.fromTheme("go-previous"))
-        prev_day_btn.setFixedSize(32, 32)
+        prev_day_btn.setFixedSize(90, 90)  # Increased from 60x60
         prev_day_btn.clicked.connect(self.previousDay)
         date_layout.addWidget(prev_day_btn)
         
         self.date_label = QLabel(self.current_date.toString("dddd, MMMM d, yyyy"))
         self.date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.date_label.setFont(QFont("Arial", 24))  # Increased from 16
         date_layout.addWidget(self.date_label)
         
         next_day_btn = QPushButton()
         next_day_btn.setIcon(QIcon.fromTheme("go-next"))
-        next_day_btn.setFixedSize(32, 32)
+        next_day_btn.setFixedSize(90, 90)  # Increased from 60x60
         next_day_btn.clicked.connect(self.nextDay)
         date_layout.addWidget(next_day_btn)
         
@@ -692,7 +1080,7 @@ class UnifiedActivitiesWidget(QWidget):
         self.filter_btn = QPushButton()
         self.filter_btn.setObjectName("filterButton")
         self.filter_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.filter_btn.setFixedSize(40, 40)
+        self.filter_btn.setFixedSize(100, 100)  # Increased from 70x70
         self.filter_btn.setToolTip("Filter Activities")
         
         # Add filter icon
@@ -702,7 +1090,7 @@ class UnifiedActivitiesWidget(QWidget):
         else:
             # Use Unicode filter icon character as fallback
             self.filter_btn.setText("⚑")
-            self.filter_btn.setFont(QFont("Arial", 14))
+            self.filter_btn.setFont(QFont("Arial", 32))  # Increased from 22
             
         self.filter_btn.clicked.connect(self.showFilterMenu)
         header_layout.addWidget(self.filter_btn)
@@ -711,7 +1099,9 @@ class UnifiedActivitiesWidget(QWidget):
         self.add_btn = QPushButton("Add Activity")
         self.add_btn.setObjectName("addActivityButton")
         self.add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.add_btn.setMinimumWidth(120)
+        self.add_btn.setMinimumWidth(300)  # Increased from 200
+        self.add_btn.setMinimumHeight(90)  # Increased from 60
+        self.add_btn.setFont(QFont("Arial", 20))  # Increased from 14
         self.add_btn.clicked.connect(self.showAddActivityDialog)
         
         # Add icon to button
@@ -728,7 +1118,7 @@ class UnifiedActivitiesWidget(QWidget):
         separator.setFrameShape(QFrame.Shape.HLine)
         separator.setFrameShadow(QFrame.Shadow.Sunken)
         separator.setObjectName("activitiesSeparator")
-        separator.setFixedHeight(1)
+        separator.setFixedHeight(4)  # Increased from 3
         main_layout.addWidget(separator)
         
         # Activities scroll area
@@ -745,8 +1135,8 @@ class UnifiedActivitiesWidget(QWidget):
         
         # Layout for activities
         self.activities_layout = QVBoxLayout(self.activities_container)
-        self.activities_layout.setContentsMargins(20, 15, 20, 15)
-        self.activities_layout.setSpacing(12)
+        self.activities_layout.setContentsMargins(60, 45, 60, 45)  # Increased from 40,30,40,30
+        self.activities_layout.setSpacing(48)  # Increased from 36
         self.activities_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         
         # Set container as scroll area widget
@@ -755,7 +1145,7 @@ class UnifiedActivitiesWidget(QWidget):
         # Empty state message
         self.empty_state = QLabel("No activities for this day")
         self.empty_state.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self.empty_state.setStyleSheet("color: #6B7280; margin-top: 20px;")
+        self.empty_state.setStyleSheet("color: #6B7280; margin-top: 90px; font-size: 24pt;")  # Increased margin and font
         self.activities_layout.addWidget(self.empty_state)
         
         main_layout.addWidget(self.scroll_area)
@@ -764,16 +1154,16 @@ class UnifiedActivitiesWidget(QWidget):
         self.setStyleSheet("""
             #activitiesHeader {
                 background-color: #FFFFFF;
-                border-top-left-radius: 8px;
-                border-top-right-radius: 8px;
+                border-top-left-radius: 12px;  /* Increased from 8px */
+                border-top-right-radius: 12px;  /* Increased from 8px */
             }
             #activitiesTitle {
                 color: #111827;
             }
             #filterButton {
                 background-color: #F3F4F6;
-                border: 1px solid #E5E7EB;
-                border-radius: 8px;
+                border: 2px solid #E5E7EB;  /* Increased from 1px */
+                border-radius: 12px;  /* Increased from 8px */
             }
             #filterButton:hover {
                 background-color: #E5E7EB;
@@ -782,8 +1172,8 @@ class UnifiedActivitiesWidget(QWidget):
                 background-color: #4F46E5;
                 color: white;
                 border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
+                border-radius: 12px;  /* Increased from 6px */
+                padding: 16px 32px;  /* Doubled from 8px 16px */
                 font-weight: bold;
             }
             #addActivityButton:hover {
@@ -804,13 +1194,13 @@ class UnifiedActivitiesWidget(QWidget):
             QScrollBar:vertical {
                 border: none;
                 background: #F9FAFB;
-                width: 8px;
+                width: 12px;  /* Increased from 8px */
                 margin: 0px;
             }
             QScrollBar::handle:vertical {
                 background: #D1D5DB;
-                min-height: 30px;
-                border-radius: 4px;
+                min-height: 45px;  /* Increased from 30px */
+                border-radius: 6px;  /* Increased from 4px */
             }
             QScrollBar::handle:vertical:hover {
                 background: #9CA3AF;
@@ -1140,7 +1530,7 @@ class UnifiedActivitiesWidget(QWidget):
         if not hasattr(self, 'empty_state') or self.empty_state is None:
             self.empty_state = QLabel("No activities for this day")
             self.empty_state.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-            self.empty_state.setStyleSheet("color: #6B7280; margin-top: 20px;")
+            self.empty_state.setStyleSheet("color: #6B7280; margin-top: 90px; font-size: 24pt;")  # Increased margin and font
         
         # Add empty state if needed
         if len(filtered_activities) == 0:
@@ -1156,31 +1546,74 @@ class UnifiedActivitiesWidget(QWidget):
         self.activities_container.updateGeometry()
     
     def addActivityWidget(self, activity):
-        """Add a widget for an activity to the UI."""
-        # Create the widget
-        widget = ActivityItemWidget(
-            activity_id=activity['id'],
-            title=activity['title'],
-            start_time=activity['start_time'].toString("HH:mm"),
-            end_time=activity['end_time'].toString("HH:mm") if 'end_time' in activity else None,
-            activity_type=activity['type'],
-            priority=activity.get('priority', 0),
-            category=activity.get('category', None),
-            completed=activity.get('completed', False),
-            color=activity.get('color', None)  # Pass the custom color
-        )
-        
-        # Connect signals
-        widget.activityCompleted.connect(self.onActivityCompleted)
-        widget.activityDeleted.connect(self.deleteActivity)
-        widget.activityEdited.connect(self.showEditActivityDialog)
-        
-        # Add to layout
-        self.activities_layout.addWidget(widget)
-        
-        # Store reference
-        widget_key = f"{activity['type']}_{activity['id']}"
-        self.activity_widgets[widget_key] = widget
+        """Add an activity widget to the list."""
+        try:
+            # Create a listwidget item
+            activity_id = activity.get('id')
+            activity_title = activity.get('title', activity.get('description', 'Untitled'))
+            activity_type = activity.get('type', 'task')
+            
+            # Process start and end times
+            start_time = activity.get('start_time', '')
+            end_time = activity.get('end_time', '')
+            
+            if isinstance(start_time, str) and start_time:
+                # Assume format is "HH:MM"
+                start_time_display = start_time
+            elif hasattr(start_time, 'toString'):
+                start_time_display = start_time.toString('HH:mm')
+            else:
+                start_time_display = ''
+                
+            if isinstance(end_time, str) and end_time:
+                end_time_display = end_time
+            elif hasattr(end_time, 'toString'):
+                end_time_display = end_time.toString('HH:mm')
+            else:
+                end_time_display = ''
+            
+            # Other activity properties
+            priority = activity.get('priority', 0)  # Default to low priority
+            category = activity.get('category', None)
+            completed = activity.get('completed', False)
+            color = activity.get('color', None)
+            
+            # Create the activity widget
+            widget = ActivityItemWidget(
+                activity_id=activity_id,
+                title=activity_title,
+                start_time=start_time_display,
+                end_time=end_time_display,
+                activity_type=activity_type,
+                priority=priority,
+                category=category,
+                completed=completed,
+                color=color,
+                parent=self.activities_container
+            )
+            
+            # Connect signals for activity actions
+            widget.activityCompleted.connect(self.onActivityCompleted)
+            widget.activityDeleted.connect(self.deleteActivity)
+            widget.activityEdited.connect(lambda id, type: self.showEditActivityDialog(id, type))
+            widget.activityClicked.connect(lambda data: self.showActivityDetails(data))
+            
+            # Add to layout
+            self.activities_layout.addWidget(widget)
+            
+            # Store a reference to the widget by ID
+            self.activity_widgets[activity_id] = widget
+            
+        except Exception as e:
+            print(f"Error adding activity widget: {e}")
+
+    def showActivityDetails(self, activity_data):
+        """Show activity details dialog when an activity is clicked."""
+        try:
+            dialog = ActivityDetailsDialog(activity_data, self)
+            dialog.show()
+        except Exception as e:
+            print(f"Error showing activity details: {e}")
     
     def previousDay(self):
         """Go to the previous day."""

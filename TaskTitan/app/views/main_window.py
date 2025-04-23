@@ -21,10 +21,9 @@ from app.views.unified_activities_widget import UnifiedActivitiesWidget
 from app.views.goal_widget import GoalWidget
 from app.views.productivity_view import ProductivityView
 from app.views.pomodoro_widget import PomodoroWidget
-from app.views.weekly_view import WeeklyView
-from app.views.daily_view import DailyView
 from app.views.settings_dialog import SettingsDialog
-from app.resources import get_icon, get_pixmap, VIEW_NAMES, DASHBOARD_VIEW, ACTIVITIES_VIEW, GOALS_VIEW, PRODUCTIVITY_VIEW, POMODORO_VIEW, WEEKLY_VIEW, DAILY_VIEW, SETTINGS_VIEW
+from app.views.weekly_plan_view import WeeklyPlanView
+from app.resources import get_icon, get_pixmap, VIEW_NAMES, DASHBOARD_VIEW, ACTIVITIES_VIEW, GOALS_VIEW, PRODUCTIVITY_VIEW, POMODORO_VIEW, WEEKLY_PLAN_VIEW, SETTINGS_VIEW
 
 # Import custom progress chart to avoid QRectF issues
 from app.views.custom_progress import CircularProgressChart
@@ -99,13 +98,9 @@ class TaskTitanApp(QMainWindow):
         self.pomodoro_view = PomodoroWidget(self)
         self.content_stack.addWidget(self.pomodoro_view)
         
-        # Create weekly view
-        self.weekly_view = WeeklyView(self)
-        self.content_stack.addWidget(self.weekly_view)
-        
-        # Create daily view
-        self.daily_view = DailyView(self)
-        self.content_stack.addWidget(self.daily_view)
+        # Create weekly plan page
+        self.weekly_plan_view = WeeklyPlanView(self)
+        self.content_stack.addWidget(self.weekly_plan_view)
         
         # Create settings page
         self.settings_widget = QWidget()
@@ -187,8 +182,7 @@ class TaskTitanApp(QMainWindow):
             (VIEW_NAMES[GOALS_VIEW], "goals", GOALS_VIEW),
             (VIEW_NAMES[PRODUCTIVITY_VIEW], "productivity", PRODUCTIVITY_VIEW),
             (VIEW_NAMES[POMODORO_VIEW], "pomodoro", POMODORO_VIEW),
-            (VIEW_NAMES[WEEKLY_VIEW], "weekly", WEEKLY_VIEW),
-            (VIEW_NAMES[DAILY_VIEW], "daily", DAILY_VIEW),
+            (VIEW_NAMES[WEEKLY_PLAN_VIEW], "weekly_plan", WEEKLY_PLAN_VIEW),
             (VIEW_NAMES[SETTINGS_VIEW], "settings", SETTINGS_VIEW),
         ]
         
@@ -902,20 +896,19 @@ class TaskTitanApp(QMainWindow):
         return start_of_week.isoformat()
 
     def clearLayout(self, layout):
-        """Clear all widgets from a layout."""
-        while layout.count():
-            child = layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-                
-    def openDailyView(self, date):
-        """Open the daily view for the selected date."""
-        self.daily_view.setDate(date.toPyDate())
-        self.changePage(7)  # Switch to daily view
+        """Clear all items from a layout."""
+        if layout is not None:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+                elif item.layout() is not None:
+                    self.clearLayout(item.layout())
 
     def openSearchDialog(self):
-        """Open the global search dialog."""
-        # This would be implemented to search across all data
+        """Open the search dialog."""
+        # Not implemented in this version
         pass
 
     def showUserMenu(self):

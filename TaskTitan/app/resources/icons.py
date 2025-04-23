@@ -14,51 +14,65 @@ ICONS_DIR = os.path.join(RESOURCES_DIR, 'icons')
 # Dictionary to cache loaded icons
 _icon_cache = {}
 
-def get_icon(icon_name):
+# Define icon paths
+ICON_PATHS = {
+    'dashboard': os.path.join(ICONS_DIR, 'dashboard.svg'),
+    'calendar': os.path.join(ICONS_DIR, 'calendar.svg'),
+    'goals': os.path.join(ICONS_DIR, 'goals.svg'),
+    'productivity': os.path.join(ICONS_DIR, 'productivity.svg'),
+    'pomodoro': os.path.join(ICONS_DIR, 'pomodoro.svg'),
+    'settings': os.path.join(ICONS_DIR, 'settings.svg'),
+    'tasks': os.path.join(ICONS_DIR, 'tasks.svg'),
+    'habits': os.path.join(ICONS_DIR, 'habits.svg'),
+    'search': os.path.join(ICONS_DIR, 'search.svg'),
+    'user': os.path.join(ICONS_DIR, 'user.svg'),
+    'add': os.path.join(ICONS_DIR, 'add.svg'),
+    'edit': os.path.join(ICONS_DIR, 'edit.svg'),
+    'delete': os.path.join(ICONS_DIR, 'delete.svg'),
+    'more': os.path.join(ICONS_DIR, 'more.svg'),
+    'task': os.path.join(ICONS_DIR, 'task.svg'),
+    'event': os.path.join(ICONS_DIR, 'event.svg'),
+    'habit': os.path.join(ICONS_DIR, 'habit.svg'),
+    'daily': os.path.join(ICONS_DIR, 'daily.svg'),
+    'weekly': os.path.join(ICONS_DIR, 'weekly.svg'),
+    'weekly_plan': os.path.join(ICONS_DIR, 'weekly.svg'),
+}
+
+def get_icon(name, fallback=None):
     """
     Get an icon by name.
     
     Args:
-        icon_name (str): Name of the icon without extension
+        name: The name of the icon to get
+        fallback: Fallback icon name if the requested icon doesn't exist
         
     Returns:
-        QIcon: The icon object, or a default icon if not found
+        A QIcon object, or an empty QIcon if the icon doesn't exist
     """
-    if icon_name in _icon_cache:
-        return _icon_cache[icon_name]
-    
-    # List of possible extensions to try
-    extensions = ['.png', '.svg', '.jpg']
-    
-    for ext in extensions:
-        icon_path = os.path.join(ICONS_DIR, f"{icon_name}{ext}")
-        if os.path.exists(icon_path):
-            icon = QIcon(icon_path)
-            _icon_cache[icon_name] = icon
-            return icon
-    
-    # Return a default icon if the requested icon is not found
-    return QIcon()
+    if name in ICON_PATHS and os.path.exists(ICON_PATHS[name]):
+        return QIcon(ICON_PATHS[name])
+    elif fallback in ICON_PATHS and os.path.exists(ICON_PATHS[fallback]):
+        return QIcon(ICON_PATHS[fallback])
+    else:
+        return QIcon()
 
-def get_pixmap(icon_name, size=None):
+def get_pixmap(name, fallback=None):
     """
     Get a pixmap by name.
     
     Args:
-        icon_name (str): Name of the icon without extension
-        size (tuple, optional): Size (width, height) for the pixmap
+        name: The name of the pixmap to get
+        fallback: Fallback pixmap name if the requested pixmap doesn't exist
         
     Returns:
-        QPixmap: The pixmap object, or an empty pixmap if not found
+        A QPixmap object, or an empty QPixmap if the pixmap doesn't exist
     """
-    icon = get_icon(icon_name)
-    if icon.isNull():
-        return QPixmap()
-    
-    if size:
-        return icon.pixmap(size[0], size[1])
+    if name in ICON_PATHS and os.path.exists(ICON_PATHS[name]):
+        return QPixmap(ICON_PATHS[name])
+    elif fallback in ICON_PATHS and os.path.exists(ICON_PATHS[fallback]):
+        return QPixmap(ICON_PATHS[fallback])
     else:
-        return icon.pixmap(icon.availableSizes()[0]) if icon.availableSizes() else QPixmap()
+        return QPixmap()
 
 def clear_cache():
     """Clear the icon cache."""
