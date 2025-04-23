@@ -537,14 +537,20 @@ class WeeklyPlanView(QWidget):
         next_week_btn.clicked.connect(self.nextWeek)
         header_layout.addWidget(next_week_btn)
         
-        # Today button
+        # Today button with calendar icon
         today_btn = QPushButton("Today")
+        today_icon = get_icon("calendar-today")
+        if not today_icon.isNull():
+            today_btn.setIcon(today_icon)
+        else:
+            today_btn.setText("📅 Today")
         today_btn.setStyleSheet("""
             QPushButton {
                 background-color: white;
                 color: #4F46E5;
                 font-weight: bold;
                 border: none;
+                padding: 8px 16px;
             }
             QPushButton:hover {
                 background-color: #F9FAFB;
@@ -577,17 +583,32 @@ class WeeklyPlanView(QWidget):
         self.zoom_slider.setMaximumWidth(150)
         controls_layout.addWidget(self.zoom_slider)
         
-        zoom_out_btn = QPushButton("-")
+        zoom_out_btn = QPushButton()
         zoom_out_btn.setFixedSize(30, 30)
+        zoom_out_icon = get_icon("zoom-out")
+        if not zoom_out_icon.isNull():
+            zoom_out_btn.setIcon(zoom_out_icon)
+        else:
+            zoom_out_btn.setText("🔍-")
+        zoom_out_btn.setToolTip("Zoom Out")
         zoom_out_btn.clicked.connect(self.zoomOut)
         controls_layout.addWidget(zoom_out_btn)
         
-        zoom_in_btn = QPushButton("+")
+        zoom_in_btn = QPushButton()
         zoom_in_btn.setFixedSize(30, 30)
+        zoom_in_icon = get_icon("zoom-in")
+        if not zoom_in_icon.isNull():
+            zoom_in_btn.setIcon(zoom_in_icon)
+        else:
+            zoom_in_btn.setText("🔍+")
+        zoom_in_btn.setToolTip("Zoom In")
         zoom_in_btn.clicked.connect(self.zoomIn)
         controls_layout.addWidget(zoom_in_btn)
         
         reset_btn = QPushButton("Reset View")
+        reset_icon = get_icon("reset")
+        if not reset_icon.isNull():
+            reset_btn.setIcon(reset_icon)
         reset_btn.clicked.connect(self.resetView)
         controls_layout.addWidget(reset_btn)
         
