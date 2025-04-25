@@ -49,6 +49,17 @@ class ActivitiesManager:
             )
         """)
         
+        # Create activity_completions table to track daily completions
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS activity_completions (
+                activity_id INTEGER NOT NULL,
+                completion_date DATE NOT NULL,
+                completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (activity_id, completion_date),
+                FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE
+            )
+        """)
+        
         # Make sure color column exists (for existing tables)
         try:
             self.cursor.execute("SELECT color FROM activities LIMIT 1")
@@ -108,27 +119,31 @@ class ActivitiesManager:
         # Get activities specifically for this date
         self.cursor.execute("""
             SELECT 
-                id, title, date, start_time, end_time, completed, type,
-                priority, category, days_of_week, goal_id, created_at, color
-            FROM activities
-            WHERE date = ?
-            ORDER BY start_time
-        """, (date_str,))
+                a.id, a.title, a.date, a.start_time, a.end_time, 
+                CASE WHEN ac.activity_id IS NOT NULL THEN 1 ELSE 0 END as completed, 
+                a.type, a.priority, a.category, a.days_of_week, a.goal_id, a.created_at, a.color
+            FROM activities a
+            LEFT JOIN activity_completions ac ON a.id = ac.activity_id AND ac.completion_date = ?
+            WHERE a.date = ?
+            ORDER BY a.start_time
+        """, (date_str, date_str))
         
         date_activities = self.cursor.fetchall()
         
         # Get repeating habits for this day of the week
         self.cursor.execute("""
             SELECT 
-                id, title, date, start_time, end_time, completed, type,
-                priority, category, days_of_week, goal_id, created_at, color
-            FROM activities
+                a.id, a.title, a.date, a.start_time, a.end_time, 
+                CASE WHEN ac.activity_id IS NOT NULL THEN 1 ELSE 0 END as completed, 
+                a.type, a.priority, a.category, a.days_of_week, a.goal_id, a.created_at, a.color
+            FROM activities a
+            LEFT JOIN activity_completions ac ON a.id = ac.activity_id AND ac.completion_date = ?
             WHERE 
-                type = 'habit' AND 
-                days_of_week IS NOT NULL AND
-                days_of_week LIKE ?
-            ORDER BY start_time
-        """, (f'%{day_name[:3]}%',))  # Match day name abbreviation
+                a.type = 'habit' AND 
+                a.days_of_week IS NOT NULL AND
+                a.days_of_week LIKE ?
+            ORDER BY a.start_time
+        """, (date_str, f'%{day_name[:3]}%'))  # Match day name abbreviation
         
         habit_activities = self.cursor.fetchall()
         
@@ -311,30 +326,50 @@ class ActivitiesManager:
         # Check if any rows were affected
         return self.cursor.rowcount > 0
     
-    def toggle_activity_completion(self, activity_id, completed):
-        """Toggle the completion status of an activity.
+    def toggle_activity_completion(self, activity_id, completed, date=None):
+        """Toggle the completion status of an activity for a specific date.
         
         Args:
             activity_id: The ID of the activity
             completed: Boolean indicating completion status
+            date: Optional QDate or date string for the completion date (defaults to today)
             
         Returns:
             True if successful, False otherwise
         """
         if not self.conn or not self.cursor:
             raise ValueError("Database connection not set")
+        
+        # Default to today if no date provided
+        if date is None:
+            from PyQt6.QtCore import QDate
+            date = QDate.currentDate()
             
-        completed_int = 1 if completed else 0
+        # Convert QDate to string if needed
+        if hasattr(date, 'toString'):
+            date_str = date.toString("yyyy-MM-dd")
+        else:
+            date_str = date
         
-        self.cursor.execute(
-            "UPDATE activities SET completed = ? WHERE id = ?", 
-            (completed_int, activity_id)
-        )
-        
-        self.conn.commit()
-        
-        # Check if any rows were affected
-        return self.cursor.rowcount > 0
+        try:
+            if completed:
+                # Add a record to activity_completions
+                self.cursor.execute(
+                    "INSERT OR REPLACE INTO activity_completions (activity_id, completion_date) VALUES (?, ?)",
+                    (activity_id, date_str)
+                )
+            else:
+                # Remove the record from activity_completions
+                self.cursor.execute(
+                    "DELETE FROM activity_completions WHERE activity_id = ? AND completion_date = ?",
+                    (activity_id, date_str)
+                )
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error toggling activity completion: {e}")
+            return False
     
     def get_activities_by_type(self, activity_type):
         """Get all activities of a specific type.

@@ -13,7 +13,7 @@ class ActivityItemWidget(QWidget):
     """A unified widget for displaying activities (events, tasks, habits)."""
     
     # Signals
-    activityCompleted = pyqtSignal(int, bool, str)  # id, completed, type
+    activityCompleted = pyqtSignal(int, bool, str)  # id, completed status, type
     activityDeleted = pyqtSignal(int, str)  # id, type
     activityEdited = pyqtSignal(int, str)  # id, type
     activityClicked = pyqtSignal(dict)  # Full activity data
@@ -51,7 +51,7 @@ class ActivityItemWidget(QWidget):
         self.setObjectName("activityWidget")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.setMinimumHeight(300)  # Increased from 180 to 300
+        self.setMinimumHeight(120)  # Much smaller height
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
         # Set up the UI
@@ -77,8 +77,24 @@ class ActivityItemWidget(QWidget):
         
         # Main layout
         self.main_layout = QHBoxLayout(self)
-        self.main_layout.setContentsMargins(20, 40, 20, 40)  # Doubled vertical padding
-        self.main_layout.setSpacing(40)  # Increased from 24 to 40
+        self.main_layout.setContentsMargins(10, 12, 10, 12)  # Smaller margins
+        self.main_layout.setSpacing(8)  # Reduced spacing
+        
+        # Left color bar based on activity type
+        self.color_bar = QFrame()
+        self.color_bar.setFixedWidth(4)  # Thin color bar
+        
+        # Set color based on activity type or custom color
+        if self.custom_color:
+            self.color_bar.setStyleSheet(f"background-color: {self.custom_color}; border-radius: 2px;")
+        elif self.activity_type == 'task':
+            self.color_bar.setStyleSheet("background-color: #F87171; border-radius: 2px;")
+        elif self.activity_type == 'event':
+            self.color_bar.setStyleSheet("background-color: #818CF8; border-radius: 2px;")
+        elif self.activity_type == 'habit':
+            self.color_bar.setStyleSheet("background-color: #34D399; border-radius: 2px;")
+        
+        self.main_layout.addWidget(self.color_bar)
         
         # Checkbox for completion status
         self.checkbox = QCheckBox()
@@ -86,56 +102,57 @@ class ActivityItemWidget(QWidget):
         self.checkbox.setObjectName("activityCheckbox")
         self.checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
         self.checkbox.toggled.connect(self.onCompletionToggled)
-        self.checkbox.setFixedHeight(90)  # Increased from 60 to 90
+        self.checkbox.setFixedSize(24, 24)  # Smaller checkbox
         self.main_layout.addWidget(self.checkbox)
         
         # Activity type icon
         self.type_icon_label = QLabel()
-        self.type_icon_label.setFixedSize(72, 72)  # Increased from 48x48 to 72x72
+        self.type_icon_label.setFixedSize(24, 24)  # Smaller icon
         
         # Set icon based on activity type
         if self.activity_type == 'task':
             task_icon = get_icon("task")
             if not task_icon.isNull():
-                self.type_icon_label.setPixmap(task_icon.pixmap(QSize(72, 72)))
+                self.type_icon_label.setPixmap(task_icon.pixmap(QSize(24, 24)))
             else:
                 # Fallback to emoji
                 self.type_icon_label.setText("✓")
-                self.type_icon_label.setStyleSheet("color: #F87171; font-weight: bold; font-size: 36px;")  # Increased font
+                self.type_icon_label.setStyleSheet("color: #F87171; font-weight: bold; font-size: 16px;")
         elif self.activity_type == 'event':
             event_icon = get_icon("event")
             if not event_icon.isNull():
-                self.type_icon_label.setPixmap(event_icon.pixmap(QSize(72, 72)))
+                self.type_icon_label.setPixmap(event_icon.pixmap(QSize(24, 24)))
             else:
                 # Fallback to emoji
                 self.type_icon_label.setText("📅")
-                self.type_icon_label.setStyleSheet("color: #818CF8; font-size: 36px;")  # Increased font
+                self.type_icon_label.setStyleSheet("color: #818CF8; font-size: 16px;")
         elif self.activity_type == 'habit':
             habit_icon = get_icon("habit")
             if not habit_icon.isNull():
-                self.type_icon_label.setPixmap(habit_icon.pixmap(QSize(72, 72)))
+                self.type_icon_label.setPixmap(habit_icon.pixmap(QSize(24, 24)))
             else:
                 # Fallback to emoji
                 self.type_icon_label.setText("↻")
-                self.type_icon_label.setStyleSheet("color: #34D399; font-weight: bold; font-size: 36px;")  # Increased font
+                self.type_icon_label.setStyleSheet("color: #34D399; font-weight: bold; font-size: 16px;")
                 
         self.main_layout.addWidget(self.type_icon_label)
         
         # Container for all text information
         self.text_container = QVBoxLayout()
-        self.text_container.setSpacing(24)  # Doubled from 12 to 24
+        self.text_container.setSpacing(4)  # Minimal spacing between text elements
+        self.text_container.setContentsMargins(8, 0, 0, 0)  # Add left padding
         
         # Activity title
         self.title_label = QLabel(self.title)
         self.title_label.setObjectName("activityTitle")
         font = QFont()
-        font.setPointSize(24)  # Increased from 16 to 24
+        font.setPointSize(12)  # Smaller font
         if self.completed:
-            self.title_label.setStyleSheet("text-decoration: line-through; color: #6B7280; font-size: 24pt;")
+            self.title_label.setStyleSheet("text-decoration: line-through; color: #6B7280; font-size: 12pt;")
         else:
             font.setBold(True)
             self.title_label.setFont(font)
-        self.title_label.setMinimumHeight(90)  # Doubled from 45 to 90
+        self.title_label.setMaximumHeight(30)  # Fixed smaller height
         self.text_container.addWidget(self.title_label)
         
         # Activity details (time, category, type)
@@ -154,39 +171,39 @@ class ActivityItemWidget(QWidget):
         details_text += f"• {self.activity_type.capitalize()}"
             
         self.details_label.setText(details_text)
-        self.details_label.setStyleSheet("color: #6B7280; font-size: 20pt;")  # Increased from 13pt to 20pt
-        self.details_label.setMinimumHeight(72)  # Doubled from 36 to 72
+        self.details_label.setStyleSheet("color: #6B7280; font-size: 10pt;")  # Smaller font
+        self.details_label.setMaximumHeight(20)  # Fixed smaller height
         self.text_container.addWidget(self.details_label)
         
-        # Add description label (additional info)
-        description_label = QLabel("This is a larger activity item with additional details for better visibility.")
+        # Add description label (additional info) - with much shorter text
+        description_label = QLabel("This is a larger activity item with additional details.")
         description_label.setWordWrap(True)
-        description_label.setStyleSheet("color: #4B5563; font-size: 18pt;")  # Increased from 12pt to 18pt
-        description_label.setMinimumHeight(60)  # Doubled from 30 to 60
+        description_label.setStyleSheet("color: #4B5563; font-size: 10pt;")  # Smaller font
+        description_label.setMaximumHeight(30)  # Fixed smaller height
         self.text_container.addWidget(description_label)
         
-        self.main_layout.addLayout(self.text_container)
+        self.main_layout.addLayout(self.text_container, 1)  # Give text container stretch factor
         
         # Priority indicator (for tasks)
         if self.activity_type == 'task':
-            self.priority_indicator = QWidget()
-            self.priority_indicator.setFixedSize(54, 54)  # Increased from 36x36 to 54x54
+            self.priority_indicator = QFrame()
+            self.priority_indicator.setFixedSize(14, 14)  # Much smaller indicator
             self.priority_indicator.setObjectName("priorityIndicator")
             
             if self.priority == 0:  # Low
                 self.priority_indicator.setStyleSheet("""
                     background-color: #10B981;
-                    border-radius: 27px;
+                    border-radius: 7px;
                 """)
             elif self.priority == 1:  # Medium
                 self.priority_indicator.setStyleSheet("""
                     background-color: #F59E0B;
-                    border-radius: 27px;
+                    border-radius: 7px;
                 """)
             elif self.priority == 2:  # High
                 self.priority_indicator.setStyleSheet("""
                     background-color: #EF4444;
-                    border-radius: 27px;
+                    border-radius: 7px;
                 """)
                 
             self.main_layout.addWidget(self.priority_indicator)
@@ -199,17 +216,17 @@ class ActivityItemWidget(QWidget):
             self.actions_btn.setIcon(more_icon)
         else:
             self.actions_btn.setText("...")
-        self.actions_btn.setFixedSize(72, 72)  # Increased from 48x48 to 72x72
+        self.actions_btn.setFixedSize(24, 24)  # Smaller button
         self.actions_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.actions_btn.setStyleSheet("""
             QPushButton {
                 border: none;
                 background-color: transparent;
-                font-size: 24px;  /* Increased from 18px */
+                font-size: 14px;
             }
             QPushButton:hover {
                 background-color: #F3F4F6;
-                border-radius: 36px;  /* Increased from 24px */
+                border-radius: 12px;
             }
             QPushButton:pressed {
                 background-color: #E5E7EB;
@@ -228,61 +245,34 @@ class ActivityItemWidget(QWidget):
             self.setStyleSheet("""
                 #activityWidget {
                     background-color: #F9FAFB;
-                    border: 2px solid #E5E7EB;  /* Increased border width */
-                    border-radius: 12px;  /* Increased radius */
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
                 }
                 #activityTitle {
                     text-decoration: line-through;
                     color: #6B7280;
-                    font-size: 24pt;  /* Increased from 16pt */
-                    padding: 12px 0;  /* Doubled padding */
+                    font-size: 12pt;
+                    padding: 2px 0;
                 }
             """)
         else:
             self.setStyleSheet("""
                 #activityWidget {
                     background-color: #FFFFFF;
-                    border: 2px solid #E5E7EB;  /* Increased border width */
-                    border-radius: 12px;  /* Increased radius */
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
                 }
                 #activityTitle {
                     color: #1F2937;
-                    font-size: 24pt;  /* Increased from 16pt */
-                    padding: 12px 0;  /* Doubled padding */
+                    font-size: 12pt;
+                    padding: 2px 0;
+                    font-weight: bold;
                 }
                 #activityWidget:hover {
-                    border: 2px solid #D1D5DB;  /* Increased border width */
+                    border: 1px solid #D1D5DB;
                     background-color: #F9FAFB;
                 }
             """)
-            
-            # Add type-specific styling or use custom color if available
-            if self.custom_color:
-                self.setStyleSheet(self.styleSheet() + f"""
-                    #activityWidget {{
-                        border-left: 24px solid {self.custom_color};  /* Doubled from 12px */
-                    }}
-                """)
-            else:
-                # Fallback to default colors if no custom color is provided
-                if self.activity_type == 'event':
-                    self.setStyleSheet(self.styleSheet() + """
-                        #activityWidget {
-                            border-left: 24px solid #818CF8;  /* Doubled from 12px */
-                        }
-                    """)
-                elif self.activity_type == 'habit':
-                    self.setStyleSheet(self.styleSheet() + """
-                        #activityWidget {
-                            border-left: 24px solid #34D399;  /* Doubled from 12px */
-                        }
-                    """)
-                elif self.activity_type == 'task':
-                    self.setStyleSheet(self.styleSheet() + """
-                        #activityWidget {
-                            border-left: 24px solid #F87171;  /* Doubled from 12px */
-                        }
-                    """)
     
     def onCompletionToggled(self, checked):
         """Handle activity completion toggling."""
@@ -290,12 +280,12 @@ class ActivityItemWidget(QWidget):
         
         # Update title appearance
         if checked:
-            self.title_label.setStyleSheet("text-decoration: line-through; color: #6B7280; font-size: 24pt;")
+            self.title_label.setStyleSheet("text-decoration: line-through; color: #6B7280; font-size: 12pt;")
             font = self.title_label.font()
             font.setBold(False)
             self.title_label.setFont(font)
         else:
-            self.title_label.setStyleSheet("color: #1F2937; font-size: 24pt;")
+            self.title_label.setStyleSheet("color: #1F2937; font-size: 12pt; font-weight: bold;")
             font = self.title_label.font()
             font.setBold(True)
             self.title_label.setFont(font)
@@ -303,8 +293,16 @@ class ActivityItemWidget(QWidget):
         # Update widget style
         self.updateStyle()
         
-        # Emit signal
+        # Emit signal with the activity ID, current status, and type
         self.activityCompleted.emit(self.activity_id, checked, self.activity_type)
+    
+    def applyShadowEffect(self):
+        """Apply shadow effect to the widget."""
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(6)  # Smaller blur radius
+        shadow.setColor(QColor(0, 0, 0, 20))  # More subtle shadow
+        shadow.setOffset(0, 2)
+        self.setGraphicsEffect(shadow)
     
     def showActionsMenu(self):
         """Show the actions menu for the activity."""
@@ -346,14 +344,6 @@ class ActivityItemWidget(QWidget):
             self.activityEdited.emit(self.activity_id, self.activity_type)
         elif action == delete_action:
             self.activityDeleted.emit(self.activity_id, self.activity_type)
-    
-    def applyShadowEffect(self):
-        """Apply shadow effect to the widget."""
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(0, 0, 0, 30))
-        shadow.setOffset(0, 2)
-        self.setGraphicsEffect(shadow)
 
 
 class ActivityAddEditDialog(QDialog):
@@ -877,14 +867,24 @@ class ActivityDetailsDialog(QDialog):
         try:
             # First try direct parent
             if hasattr(self.parent_widget, 'onActivityCompleted'):
-                self.parent_widget.onActivityCompleted(self.activity.get('id'), self.activity.get('type'))
+                self.parent_widget.onActivityCompleted(
+                    self.activity.get('id'), 
+                    True,  # Mark as completed
+                    self.activity.get('type')
+                )
                 self.close()
                 return
             
             # Then try unified activities widget
             if hasattr(self.parent_widget, 'activities_manager'):
+                # Get activity date
+                activity_date = self.activity.get('date')
+                
                 self.parent_widget.activities_manager.toggle_activity_completion(
-                    self.activity.get('id'), True)
+                    self.activity.get('id'), 
+                    True,
+                    activity_date
+                )
                 self.parent_widget.refreshActivitiesList()
                 self.close()
                 return
@@ -893,12 +893,22 @@ class ActivityDetailsDialog(QDialog):
             parent = self.parent_widget
             while parent:
                 if hasattr(parent, 'onActivityCompleted'):
-                    parent.onActivityCompleted(self.activity.get('id'), self.activity.get('type'))
+                    parent.onActivityCompleted(
+                        self.activity.get('id'), 
+                        True,  # Mark as completed
+                        self.activity.get('type')
+                    )
                     self.close()
                     break
                 elif hasattr(parent, 'activities_manager'):
+                    # Get activity date
+                    activity_date = self.activity.get('date')
+                    
                     parent.activities_manager.toggle_activity_completion(
-                        self.activity.get('id'), True)
+                        self.activity.get('id'), 
+                        True,
+                        activity_date
+                    )
                     if hasattr(parent, 'refreshActivitiesList'):
                         parent.refreshActivitiesList()
                     self.close()
@@ -977,7 +987,7 @@ class UnifiedActivitiesWidget(QWidget):
     
     # Signals
     activityAdded = pyqtSignal(dict)
-    activityCompleted = pyqtSignal(int, bool, str)  # id, completed, type
+    activityCompleted = pyqtSignal(int, bool, str)  # id, completed status, activity_type
     activityDeleted = pyqtSignal(int, str)  # id, type
     activityUpdated = pyqtSignal(int, str)  # id, type
     
@@ -1017,37 +1027,37 @@ class UnifiedActivitiesWidget(QWidget):
     def setupUI(self):
         """Set up the UI components."""
         # Main layout
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
         
         # Header
         header = QWidget()
         header.setObjectName("activitiesHeader")
-        header.setMinimumHeight(180)  # Increased from 120 to 180
+        header.setMinimumHeight(120)  # Reduced from 180
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(60, 30, 60, 30)  # Increased margins
+        header_layout.setContentsMargins(40, 20, 40, 20)  # Reduced from 60,30,60,30
         
         # Title with icon
         title_layout = QHBoxLayout()
-        title_layout.setSpacing(24)  # Increased from 16 to 24
+        title_layout.setSpacing(16)  # Reduced from 24
         
         # Add activities icon
         activities_icon_label = QLabel()
         activities_icon = get_icon("calendar")
         if not activities_icon.isNull():
-            activities_icon_label.setPixmap(activities_icon.pixmap(QSize(72, 72)))  # Increased from 48x48
+            activities_icon_label.setPixmap(activities_icon.pixmap(QSize(48, 48)))  # Reduced from 72x72
         else:
             # Fallback to emoji icon
             activities_icon_label.setText("📅")
-            activities_icon_label.setFont(QFont("Arial", 36))  # Increased from 28
+            activities_icon_label.setFont(QFont("Arial", 28))  # Reduced from 36
         title_layout.addWidget(activities_icon_label)
         
         # Title text
         title = QLabel("My Activities")
         title.setObjectName("activitiesTitle")
         font = QFont()
-        font.setPointSize(32)  # Increased from 22
+        font.setPointSize(24)  # Reduced from 32
         font.setBold(True)
         title.setFont(font)
         title_layout.addWidget(title)
@@ -1059,7 +1069,7 @@ class UnifiedActivitiesWidget(QWidget):
         
         prev_day_btn = QPushButton()
         prev_day_btn.setIcon(QIcon.fromTheme("go-previous"))
-        prev_day_btn.setFixedSize(90, 90)  # Increased from 60x60
+        prev_day_btn.setFixedSize(60, 60)  # Reduced from 90x90
         prev_day_btn.clicked.connect(self.previousDay)
         date_layout.addWidget(prev_day_btn)
         
@@ -1070,7 +1080,7 @@ class UnifiedActivitiesWidget(QWidget):
         
         next_day_btn = QPushButton()
         next_day_btn.setIcon(QIcon.fromTheme("go-next"))
-        next_day_btn.setFixedSize(90, 90)  # Increased from 60x60
+        next_day_btn.setFixedSize(60, 60)  # Reduced from 90x90
         next_day_btn.clicked.connect(self.nextDay)
         date_layout.addWidget(next_day_btn)
         
@@ -1080,7 +1090,7 @@ class UnifiedActivitiesWidget(QWidget):
         self.filter_btn = QPushButton()
         self.filter_btn.setObjectName("filterButton")
         self.filter_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.filter_btn.setFixedSize(100, 100)  # Increased from 70x70
+        self.filter_btn.setFixedSize(60, 60)  # Reduced from 100x100
         self.filter_btn.setToolTip("Filter Activities")
         
         # Add filter icon
@@ -1090,7 +1100,7 @@ class UnifiedActivitiesWidget(QWidget):
         else:
             # Use Unicode filter icon character as fallback
             self.filter_btn.setText("⚑")
-            self.filter_btn.setFont(QFont("Arial", 32))  # Increased from 22
+            self.filter_btn.setFont(QFont("Arial", 24))  # Reduced from 32
             
         self.filter_btn.clicked.connect(self.showFilterMenu)
         header_layout.addWidget(self.filter_btn)
@@ -1099,9 +1109,9 @@ class UnifiedActivitiesWidget(QWidget):
         self.add_btn = QPushButton("Add Activity")
         self.add_btn.setObjectName("addActivityButton")
         self.add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.add_btn.setMinimumWidth(300)  # Increased from 200
-        self.add_btn.setMinimumHeight(90)  # Increased from 60
-        self.add_btn.setFont(QFont("Arial", 20))  # Increased from 14
+        self.add_btn.setMinimumWidth(200)  # Reduced from 300
+        self.add_btn.setMinimumHeight(60)  # Reduced from 90
+        self.add_btn.setFont(QFont("Arial", 16))  # Reduced from 20
         self.add_btn.clicked.connect(self.showAddActivityDialog)
         
         # Add icon to button
@@ -1111,15 +1121,15 @@ class UnifiedActivitiesWidget(QWidget):
         
         header_layout.addWidget(self.add_btn)
         
-        main_layout.addWidget(header)
+        self.main_layout.addWidget(header)
         
         # Separator
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
         separator.setFrameShadow(QFrame.Shadow.Sunken)
         separator.setObjectName("activitiesSeparator")
-        separator.setFixedHeight(4)  # Increased from 3
-        main_layout.addWidget(separator)
+        separator.setFixedHeight(2)  # Reduced from 4
+        self.main_layout.addWidget(separator)
         
         # Activities scroll area
         self.scroll_area = QScrollArea()
@@ -1135,8 +1145,8 @@ class UnifiedActivitiesWidget(QWidget):
         
         # Layout for activities
         self.activities_layout = QVBoxLayout(self.activities_container)
-        self.activities_layout.setContentsMargins(60, 45, 60, 45)  # Increased from 40,30,40,30
-        self.activities_layout.setSpacing(48)  # Increased from 36
+        self.activities_layout.setContentsMargins(40, 30, 40, 30)  # Reduced from 60,45,60,45
+        self.activities_layout.setSpacing(16)  # Further reduced spacing between activities
         self.activities_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         
         # Set container as scroll area widget
@@ -1145,10 +1155,10 @@ class UnifiedActivitiesWidget(QWidget):
         # Empty state message
         self.empty_state = QLabel("No activities for this day")
         self.empty_state.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self.empty_state.setStyleSheet("color: #6B7280; margin-top: 90px; font-size: 24pt;")  # Increased margin and font
+        self.empty_state.setStyleSheet("color: #6B7280; margin-top: 60px; font-size: 18pt;")  # Reduced margin and font
         self.activities_layout.addWidget(self.empty_state)
         
-        main_layout.addWidget(self.scroll_area)
+        self.main_layout.addWidget(self.scroll_area)
         
         # Apply styles
         self.setStyleSheet("""
@@ -1461,7 +1471,7 @@ class UnifiedActivitiesWidget(QWidget):
         except Exception as e:
             print(f"Error deleting activity: {e}")
     
-    def onActivityCompleted(self, activity_id, activity_type):
+    def onActivityCompleted(self, activity_id, completed, activity_type):
         """Mark an activity as completed or not completed."""
         if not hasattr(self, 'activities_manager'):
             return
@@ -1469,21 +1479,22 @@ class UnifiedActivitiesWidget(QWidget):
         # Find the activity in our list
         for i, activity in enumerate(self.activities):
             if activity.get('id') == activity_id and activity.get('type') == activity_type:
-                # Toggle the completed status
-                new_status = not activity.get('completed', False)
+                # Use the provided completion status
+                new_status = completed
                 
-                # Update in database
-                update_data = {'completed': new_status}
-                if new_status:
-                    update_data['completed_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    update_data['completed_at'] = None
-                    
-                success = self.activities_manager.update_activity(activity_id, update_data)
+                # Get the current date for the completion
+                current_date = self.current_date
+                
+                # Toggle completion in the database for this specific date
+                success = self.activities_manager.toggle_activity_completion(
+                    activity_id, 
+                    new_status,
+                    current_date
+                )
                 
                 if success:
                     # Update our local data
-                    self.activities[i].update(update_data)
+                    activity['completed'] = new_status
                     
                     # Refresh the UI
                     self.refreshActivitiesList()
@@ -1492,9 +1503,14 @@ class UnifiedActivitiesWidget(QWidget):
                     if activity_type == 'event':
                         self.syncWithCalendar()
                     
+                    # Also refresh the weekly plan view if it exists
+                    if hasattr(self.parent, 'weekly_plan_view') and self.parent.weekly_plan_view:
+                        self.parent.weekly_plan_view.refresh()
+                    
                     # Emit a signal that activity was completed (if applicable)
                     if hasattr(self, 'activityCompleted'):
-                        self.activityCompleted.emit(activity_id, activity_type, new_status)
+                        # Make sure to pass the correct types (int, bool, str)
+                        self.activityCompleted.emit(int(activity_id), bool(new_status), str(activity_type))
                         
                 break
     
@@ -1530,7 +1546,7 @@ class UnifiedActivitiesWidget(QWidget):
         if not hasattr(self, 'empty_state') or self.empty_state is None:
             self.empty_state = QLabel("No activities for this day")
             self.empty_state.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-            self.empty_state.setStyleSheet("color: #6B7280; margin-top: 90px; font-size: 24pt;")  # Increased margin and font
+            self.empty_state.setStyleSheet("color: #6B7280; margin-top: 60px; font-size: 18pt;")  # Reduced margin and font
         
         # Add empty state if needed
         if len(filtered_activities) == 0:
@@ -1629,8 +1645,12 @@ class UnifiedActivitiesWidget(QWidget):
     
     def refresh(self):
         """Refresh the activities list."""
+        # Make sure to reload activities from the database with current date
         self.loadActivitiesFromDatabase()
         
+        # Also update the current activities list display
+        self.refreshActivitiesList()
+    
     def showAddTaskDialog(self):
         """Add a task (compatibility with the original interface)."""
         dialog = ActivityAddEditDialog(self)

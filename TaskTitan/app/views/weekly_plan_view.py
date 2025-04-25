@@ -6,7 +6,8 @@ This module provides a weekly view of activities with an hourly breakdown.
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QFrame, QGraphicsView, QGraphicsScene, 
                            QGraphicsRectItem, QGraphicsTextItem, QGraphicsLineItem,
-                           QGraphicsEllipseItem, QSlider, QSizePolicy, QScrollArea, QMenu, QDialog)
+                           QGraphicsEllipseItem, QSlider, QSizePolicy, QScrollArea, QMenu, QDialog, QMainWindow, QGraphicsProxyWidget,
+                           QGraphicsPathItem)
 from PyQt6.QtCore import Qt, QDate, QTime, QRectF, QTimer, QPointF, pyqtSignal
 from PyQt6.QtGui import QIcon, QFont, QColor, QPen, QBrush, QPainterPath, QPainter
 from datetime import datetime, timedelta
@@ -30,8 +31,37 @@ class ActivityDetailsDialog(QDialog):
         # Store the parent properly to ensure button connections work
         self.parent_widget = parent
         
+        # Update completion status from parent if possible
+        self.updateCompletionStatusFromParent()
+        
         self.setupUI()
         
+    def updateCompletionStatusFromParent(self):
+        """Try to update the completion status from the parent's activities manager."""
+        try:
+            activity_id = self.activity.get('id')
+            # Try to find an activities manager to get the latest status
+            manager = None
+            
+            # First check immediate parent
+            if hasattr(self.parent_widget, 'activities_manager'):
+                manager = self.parent_widget.activities_manager
+            # Then try parent's parent
+            elif hasattr(self.parent_widget, 'parent') and callable(self.parent_widget.parent):
+                parent = self.parent_widget.parent()
+                if hasattr(parent, 'activities_manager'):
+                    manager = parent.activities_manager
+            
+            # If we found a manager, get the current status
+            if manager and activity_id:
+                db_activity = manager.get_activity_by_id(activity_id)
+                if db_activity:
+                    self.activity['completed'] = db_activity.get('completed', self.activity.get('completed', False))
+        except Exception as e:
+            print(f"Error updating completion status: {e}")
+            # Continue anyway
+            pass
+    
     def setupUI(self):
         """Set up the UI for the activity details dialog."""
         layout = QVBoxLayout(self)
@@ -265,40 +295,90 @@ class ActivityDetailsDialog(QDialog):
                 return
             
             # Then try parent's parent which is more likely the WeeklyPlanView
-            if hasattr(self.parent_widget, 'parent') and self.parent_widget.parent:
-                if hasattr(self.parent_widget.parent, 'markActivityComplete'):
-                    self.parent_widget.parent.markActivityComplete(self.activity.get('id'), self.activity.get('type'))
+            if hasattr(self.parent_widget, 'parent') and callable(self.parent_widget.parent):
+                parent = self.parent_widget.parent()
+                if hasattr(parent, 'markActivityComplete'):
+                    parent.markActivityComplete(self.activity.get('id'), self.activity.get('type'))
                     self.close()
                     return
+                # Try to use the activities_manager directly
+                elif hasattr(parent, 'activities_manager'):
+                    # Get the activity date
+                    activity_date = self.activity.get('date')
                     
-            # If that fails, try getting the main window through the scene
-            if isinstance(self.parent_widget, QGraphicsView):
-                view = self.parent_widget
-                if hasattr(view, 'parent') and view.parent:
-                    view_parent = view.parent
-                    if hasattr(view_parent, 'activities_manager'):
-                        view_parent.activities_manager.toggle_activity_completion(
-                            self.activity.get('id'), True)
+                    # If date isn't available, try to calculate it from day_index
+                    if not activity_date and 'day_index' in self.activity and hasattr(parent, 'current_week_start'):
+                        day_index = self.activity.get('day_index', 0)
+                        activity_date = parent.current_week_start.addDays(day_index)
+                    
+                    if activity_date:
+                        parent.activities_manager.toggle_activity_completion(
+                            self.activity.get('id'), 
+                            True,
+                            activity_date
+                        )
+                        # Refresh the view
+                        if hasattr(parent, 'updateWeekView'):
+                            parent.updateWeekView()
                         self.close()
                         return
             
-            # As a fallback, try to find the activities manager through any parent
-            parent = self.parent_widget
-            while parent:
-                if hasattr(parent, 'activities_manager'):
-                    parent.activities_manager.toggle_activity_completion(
-                        self.activity.get('id'), True)
+            # If that fails, try to find the main window
+            main_window = self.findMainWindow()
+            if main_window and hasattr(main_window, 'activities_manager'):
+                # Get the activity date
+                activity_date = self.activity.get('date')
+                
+                # If date isn't available, try to calculate it
+                if not activity_date and 'day_index' in self.activity:
+                    # Try to find a WeeklyPlanView to get the week start date
+                    weekly_view = None
+                    if hasattr(main_window, 'weekly_plan_view'):
+                        weekly_view = main_window.weekly_plan_view
+                    elif hasattr(self.parent_widget, 'current_week_start'):
+                        weekly_view = self.parent_widget
+                        
+                    if weekly_view and hasattr(weekly_view, 'current_week_start'):
+                        day_index = self.activity.get('day_index', 0)
+                        activity_date = weekly_view.current_week_start.addDays(day_index)
+                
+                if activity_date:
+                    main_window.activities_manager.toggle_activity_completion(
+                        self.activity.get('id'), 
+                        True,
+                        activity_date
+                    )
+                    # Reload views
+                    if hasattr(main_window, 'weekly_plan_view'):
+                        main_window.weekly_plan_view.refresh()
+                    if hasattr(main_window, 'activities_view'):
+                        main_window.activities_view.refresh()
+                    # Also check for onActivityCompleted method (matches unified_activities_widget)
+                    if hasattr(main_window, 'onActivityCompleted'):
+                        main_window.onActivityCompleted(
+                            self.activity.get('id'),
+                            True,  # Mark as completed
+                            self.activity.get('type')
+                        )
                     self.close()
-                    break
-                if hasattr(parent, 'parent'):
-                    parent = parent.parent
-                else:
-                    break
-                    
+                    return
+                
         except Exception as e:
             print(f"Error marking activity complete: {e}")
             # At least close the dialog even if operation failed
             self.close()
+    
+    def findMainWindow(self):
+        """Find the main window from any child widget."""
+        parent = self.parent_widget
+        while parent:
+            if isinstance(parent, QMainWindow) or hasattr(parent, 'activities_manager'):
+                return parent
+            if hasattr(parent, 'parent') and callable(parent.parent):
+                parent = parent.parent()
+            else:
+                break
+        return None
     
     def editActivity(self):
         """Open the edit dialog for this activity."""
@@ -310,17 +390,18 @@ class ActivityDetailsDialog(QDialog):
                 return
             
             # Then try parent's parent which is more likely the WeeklyPlanView
-            if hasattr(self.parent_widget, 'parent') and self.parent_widget.parent:
-                if hasattr(self.parent_widget.parent, 'editActivity'):
-                    self.parent_widget.parent.editActivity(self.activity.get('id'), self.activity.get('type'))
+            if hasattr(self.parent_widget, 'parent') and callable(self.parent_widget.parent):
+                parent = self.parent_widget.parent()
+                if hasattr(parent, 'editActivity'):
+                    parent.editActivity(self.activity.get('id'), self.activity.get('type'))
                     self.close()
                     return
                     
             # If that fails, try getting the main window through the scene
             if isinstance(self.parent_widget, QGraphicsView):
                 view = self.parent_widget
-                if hasattr(view, 'parent') and view.parent:
-                    view_parent = view.parent
+                if hasattr(view, 'parent') and callable(view.parent):
+                    view_parent = view.parent()
                     if hasattr(view_parent, 'showEditActivityDialog'):
                         view_parent.showEditActivityDialog(self.activity.get('id'), self.activity.get('type'))
                         self.close()
@@ -337,8 +418,8 @@ class ActivityDetailsDialog(QDialog):
                     parent.showEditActivityDialog(self.activity.get('id'), self.activity.get('type'))
                     self.close()
                     break
-                if hasattr(parent, 'parent'):
-                    parent = parent.parent
+                if hasattr(parent, 'parent') and callable(parent.parent):
+                    parent = parent.parent()
                 else:
                     break
                     
@@ -357,17 +438,18 @@ class ActivityDetailsDialog(QDialog):
                 return
             
             # Then try parent's parent which is more likely the WeeklyPlanView
-            if hasattr(self.parent_widget, 'parent') and self.parent_widget.parent:
-                if hasattr(self.parent_widget.parent, 'deleteActivity'):
-                    self.parent_widget.parent.deleteActivity(self.activity.get('id'), self.activity.get('type'))
+            if hasattr(self.parent_widget, 'parent') and callable(self.parent_widget.parent):
+                parent = self.parent_widget.parent()
+                if hasattr(parent, 'deleteActivity'):
+                    parent.deleteActivity(self.activity.get('id'), self.activity.get('type'))
                     self.close()
                     return
                     
             # If that fails, try getting the main window through the scene
             if isinstance(self.parent_widget, QGraphicsView):
                 view = self.parent_widget
-                if hasattr(view, 'parent') and view.parent:
-                    view_parent = view.parent
+                if hasattr(view, 'parent') and callable(view.parent):
+                    view_parent = view.parent()
                     if hasattr(view_parent, 'activities_manager'):
                         view_parent.activities_manager.delete_activity(self.activity.get('id'))
                         self.close()
@@ -380,8 +462,8 @@ class ActivityDetailsDialog(QDialog):
                     parent.activities_manager.delete_activity(self.activity.get('id'))
                     self.close()
                     break
-                if hasattr(parent, 'parent'):
-                    parent = parent.parent
+                if hasattr(parent, 'parent') and callable(parent.parent):
+                    parent = parent.parent()
                 else:
                     break
                     
@@ -396,6 +478,7 @@ class WeeklyPlanView(QWidget):
     
     # Signals
     activityClicked = pyqtSignal(dict)  # Emitted when an activity is clicked
+    activityCompletionChanged = pyqtSignal(int, bool, str)  # id, completed status, type
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -417,11 +500,14 @@ class WeeklyPlanView(QWidget):
         
         # Get activities manager from parent or create new one
         if hasattr(parent, 'activities_manager'):
+            print("Using parent's activities_manager")
             self.activities_manager = parent.activities_manager
         else:
+            print("Creating new ActivitiesManager instance")
             # Create our own manager if needed
             self.activities_manager = ActivitiesManager()
             if hasattr(parent, 'conn') and hasattr(parent, 'cursor'):
+                print("Setting connection from parent")
                 self.activities_manager.set_connection(parent.conn, parent.cursor)
         
         # Set up the UI
@@ -432,6 +518,9 @@ class WeeklyPlanView(QWidget):
         
         # Set background color
         self.setStyleSheet("background-color: #F9FAFB;")
+        
+        # Connect to parent signals if available
+        self.connectParentSignals()
 
     def setupUI(self):
         """Set up the user interface components."""
@@ -755,9 +844,12 @@ class WeeklyPlanView(QWidget):
         self.activities = []
         
         # Check if we have an activities manager
-        if not hasattr(self, 'activities_manager'):
+        if not hasattr(self, 'activities_manager') or not self.activities_manager:
+            print("ERROR: Activities manager not available")
             self.status_label.setText("Error: Activities manager not available")
             return
+        
+        print(f"Loading activities for week starting {self.current_week_start.toString()}")
         
         # Loop through each day of the week
         for day in range(7):
@@ -768,15 +860,27 @@ class WeeklyPlanView(QWidget):
             
             # Store with additional info for rendering
             for activity in day_activities:
+                activity_id = activity.get('id')
+                
+                # Ensure we have the latest completion status from database
+                db_activity = self.activities_manager.get_activity_by_id(activity_id)
+                if db_activity and 'completed' in db_activity:
+                    activity['completed'] = db_activity.get('completed', False)
+                    print(f"Activity {activity_id} completion status: {activity['completed']}")
+                
                 activity['day_index'] = day
                 self.activities.append(activity)
+        
+        print(f"Loaded {len(self.activities)} activities")
         
         # Update the view
         self.updateWeekView()
     
     def updateWeekView(self):
         """Update the weekly view with current activities."""
-        # Clear current view
+        print("Updating week view...")
+        
+        # Clear current scene
         self.scene.clear()
         self.activity_items = {}
         
@@ -789,6 +893,8 @@ class WeeklyPlanView(QWidget):
         # Make sure the whole grid is visible
         if self.scene.items():
             self.view.setSceneRect(self.scene.itemsBoundingRect().adjusted(-20, -20, 20, 20))
+            
+        print("Week view updated")
     
     def drawWeekGrid(self):
         """Draw the weekly grid with day columns and hour rows."""
@@ -1097,50 +1203,68 @@ class WeeklyPlanView(QWidget):
                         else:
                             color = QColor("#9CA3AF")  # Gray
                     
-                    # Make the color transparent
-                    color.setAlpha(180)
-                    
                     # Leave margins for better visual separation
                     margin = 2
                     actual_x = x_pos + margin
                     actual_width = width - 2 * margin
                     
-                    # Set rounded corners for the rectangle with a shadow effect
+                    # Check completion status
+                    is_completed = bool(activity.get('completed', False))
+                    
+                    # Modify color based on completion status
+                    if is_completed:
+                        # Make completed activities show a different appearance
+                        # Option 1: Add a green color overlay
+                        color = color.lighter(110)  # Lighten the base color
+                        color.setAlpha(180)
+                    else:
+                        # Regular transparency for uncompleted activities
+                        color.setAlpha(180)
+                    
+                    # Create rectangle path
                     path = QPainterPath()
                     path.addRoundedRect(QRectF(actual_x, y_pos, actual_width, height), 8, 8)
+                    
+                    # Add the activity rectangle
                     rounded_rect = self.scene.addPath(path, QPen(color.darker(), 1), QBrush(color))
                     rounded_rect.setData(0, activity.get('id'))
+                    rounded_rect.setData(1, activity.get('type'))
+                    rounded_rect.setData(2, is_completed)  # Store completion status
                     rounded_rect.setZValue(1)
                     
-                    # Add shadow effect (lighter shadow for better performance)
+                    # Add shadow effect
                     shadow_path = QPainterPath()
                     shadow_path.addRoundedRect(QRectF(actual_x + 2, y_pos + 2, actual_width, height), 8, 8)
                     shadow_rect = self.scene.addPath(shadow_path, QPen(Qt.PenStyle.NoPen), 
                                                    QBrush(QColor(0, 0, 0, 20)))
                     shadow_rect.setZValue(0.5)
                     
-                    # Add modern completion indicator
-                    if activity.get('completed'):
-                        # Create a vertical bar on the left
-                        complete_path = QPainterPath()
-                        complete_path.addRoundedRect(QRectF(actual_x, y_pos, 4, height), 2, 2)
-                        self.scene.addPath(complete_path, QPen(Qt.PenStyle.NoPen), QBrush(QColor("#10B981")))
-                        
-                        # Add a small checkmark icon
-                        if width > 30:  # Only add if there's enough space
-                            check_label = QGraphicsTextItem("✓")
-                            check_label.setPos(actual_x + actual_width - 20, y_pos + 5)
-                            check_label.setDefaultTextColor(QColor(255, 255, 255, 200))
-                            font = check_label.font()
-                            font.setBold(True)
-                            check_label.setFont(font)
-                            check_label.setZValue(2)
-                            self.scene.addItem(check_label)
+                    # If date isn't available, calculate it from day_index
+                    if not activity.get('date') and 'day_index' in activity:
+                        day_index = activity.get('day_index', 0)
+                        activity_date = self.current_week_start.addDays(day_index)
+                        activity['date'] = activity_date
                     
-                    # Add activity title with better font
+                    # Enable interactivity for the rectangle
+                    rounded_rect.setAcceptHoverEvents(True)
+                    rounded_rect.setCursor(Qt.CursorShape.PointingHandCursor)
+                    
+                    # Add completion indicator
+                    if is_completed:
+                        # Add a completion indicator - green bar on the left
+                        complete_path = QPainterPath()
+                        complete_path.addRoundedRect(QRectF(actual_x, y_pos, 6, height), 3, 3)
+                        completion_bar = self.scene.addPath(
+                            complete_path, 
+                            QPen(Qt.PenStyle.NoPen), 
+                            QBrush(QColor("#10B981"))
+                        )
+                        completion_bar.setZValue(2)  # Above the activity rectangle
+                    
+                    # Add activity title
                     title_text = QGraphicsTextItem(activity.get('title', 'Untitled'))
-                    title_text.setTextWidth(actual_width - 10)
-                    title_text.setPos(actual_x + 6, y_pos + 5)
+                    title_text.setTextWidth(actual_width - 30)
+                    title_text.setPos(actual_x + 8, y_pos + 5)
                     title_text.setDefaultTextColor(QColor("#FFFFFF"))
                     font = title_text.font()
                     font.setBold(True)
@@ -1157,6 +1281,7 @@ class WeeklyPlanView(QWidget):
                     text_bg_height = min(30, height)
                     text_bg = QGraphicsRectItem(actual_x, y_pos, actual_width, text_bg_height)
                     text_bg.setPen(QPen(Qt.PenStyle.NoPen))
+                    
                     # Use a darker background with gradient for better text visibility
                     darker_color = color.darker(150)
                     darker_color.setAlpha(180)
@@ -1172,12 +1297,11 @@ class WeeklyPlanView(QWidget):
                         time_format = "HH:mm" if actual_width > 70 else "HH"
                         time_text = QGraphicsTextItem(f"{start_time.toString(time_format)}-{end_time.toString(time_format)}")
                         time_text.setTextWidth(actual_width - 10)
-                        time_text.setPos(actual_x + 6, y_pos + 30)
-                        # Use white color with drop shadow effect for better readability
+                        time_text.setPos(actual_x + 8, y_pos + 30)
                         time_text.setDefaultTextColor(QColor("#FFFFFF"))
-                        # Add a slight outline to the text
+                        
                         time_font = time_text.font()
-                        time_font.setBold(True)  # Make time bold for better visibility
+                        time_font.setBold(True)
                         if actual_width < 70:
                             time_font.setPointSize(time_font.pointSize() - 1)
                         time_text.setFont(time_font)
@@ -1185,14 +1309,13 @@ class WeeklyPlanView(QWidget):
                         time_text.setZValue(2)
                         self.scene.addItem(time_text)
                     
-                    # Add activity type indicator only if there's enough space
+                    # Add activity type indicator if there's enough space
                     if height > 60 and actual_width > 50:
                         type_text = QGraphicsTextItem(activity.get('type', '').capitalize())
                         type_text.setTextWidth(actual_width - 10)
-                        type_text.setPos(actual_x + 6, y_pos + height - 25)
+                        type_text.setPos(actual_x + 8, y_pos + height - 25)
                         type_text.setDefaultTextColor(QColor("#FFFFFF"))
                         
-                        # Make type text more visible
                         type_font = type_text.font()
                         type_font.setBold(True)
                         if actual_width < 70:
@@ -1201,7 +1324,7 @@ class WeeklyPlanView(QWidget):
                         
                         # Create a rounded background for the type label
                         if height > 80:  # Only add background if there's enough space
-                            type_bg = QGraphicsRectItem(actual_x + 4, y_pos + height - 25, 
+                            type_bg = QGraphicsRectItem(actual_x + 6, y_pos + height - 25, 
                                                      type_text.boundingRect().width() + 10, 20)
                             type_bg.setPen(QPen(Qt.PenStyle.NoPen))
                             type_bg.setBrush(QBrush(QColor(0, 0, 0, 60)))  # Semi-transparent black
@@ -1210,10 +1333,6 @@ class WeeklyPlanView(QWidget):
                         
                         type_text.setZValue(2)
                         self.scene.addItem(type_text)
-                    
-                    # Make the rectangle clickable
-                    rounded_rect.setAcceptHoverEvents(True)
-                    rounded_rect.setCursor(Qt.CursorShape.PointingHandCursor)
                     
                     # Store reference to the activity
                     self.activity_items[activity.get('id')] = {
@@ -1231,46 +1350,426 @@ class WeeklyPlanView(QWidget):
         self.status_label.setText(f"Showing {len(self.activities)} activities")
 
     def handleSceneClick(self, event):
-        """Handle clicks on the scene."""
-        # Find the item under the cursor
-        items = self.scene.items(event.scenePos())
-        
-        # Look for activity rectangles
-        for item in items:
-            if hasattr(item, 'data') and item.data(0):
-                activity_id = item.data(0)
-                if activity_id in self.activity_items:
+        """Handle clicks on the scene, showing activity details or toggling completion."""
+        try:
+            # Check if it's a right-click
+            if event.button() == Qt.MouseButton.RightButton:
+                self.showContextMenu(event)
+                return
+                
+            # For left clicks, check what was clicked
+            items = self.scene.items(event.scenePos())
+            
+            for item in items:
+                # Check if it's an activity rectangle
+                if isinstance(item, QPainterPath) and item.data(0):
+                    activity_id = item.data(0)
+                    activity_type = item.data(1)
+                    
+                    # Check if Alt key is pressed to toggle completion
+                    modifiers = event.modifiers()
+                    if modifiers & Qt.KeyboardModifier.AltModifier:
+                        # Toggle completion status
+                        activity = None
+                        if activity_id in self.activity_items:
+                            activity = self.activity_items[activity_id]['activity']
+                            # Toggle completion state
+                            is_completed = not bool(activity.get('completed', False))
+                            print(f"Alt+click detected: Toggling activity {activity_id} completion to {is_completed}")
+                            self.toggleActivityCompletion(activity_id, is_completed, activity_type)
+                        event.accept()
+                        return
+                    
+                    # Regular click - show activity details
+                    self.showActivityDetails(activity_id, activity_type)
+                    event.accept()
+                    return
+            
+            # If we get here, no activity was clicked
+            event.accept()
+            
+        except Exception as e:
+            print(f"Error handling scene click: {e}")
+            import traceback
+            traceback.print_exc()
+            event.accept()
+    
+    def showContextMenu(self, event):
+        """Show a context menu for an activity when right-clicked."""
+        try:
+            # Get the item under the cursor
+            pos = event.scenePos()
+            items = self.scene.items(pos)
+            
+            for item in items:
+                # Check if it's an activity rectangle
+                if isinstance(item, QPainterPath) and item.data(0):
+                    activity_id = item.data(0)
+                    activity_type = item.data(1)
+                    
+                    if activity_id not in self.activity_items:
+                        continue
+                        
                     activity = self.activity_items[activity_id]['activity']
                     
-                    # Show activity details dialog
-                    dialog = ActivityDetailsDialog(activity, self.view)
-                    dialog.show()
+                    # Make sure activity has a date
+                    if not activity.get('date') and 'day_index' in activity:
+                        day_index = activity.get('day_index', 0)
+                        activity_date = self.current_week_start.addDays(day_index)
+                        activity['date'] = activity_date
                     
-                    # Emit signal
-                    self.activityClicked.emit(activity)
+                    # Get the latest completion status
+                    is_completed = bool(activity.get('completed', False))
+                    
+                    # Create the context menu
+                    menu = QMenu()
+                    
+                    # Add menu actions
+                    view_action = menu.addAction("View Details")
+                    
+                    # Completion toggle option
+                    complete_text = "Mark Incomplete" if is_completed else "Mark Complete"
+                    complete_action = menu.addAction(complete_text)
+                    if is_completed:
+                        complete_action.setIcon(QIcon.fromTheme("edit-undo"))
+                    else:
+                        complete_action.setIcon(QIcon.fromTheme("dialog-ok"))
+                    
+                    menu.addSeparator()
+                    
+                    # Edit and delete options
+                    edit_action = menu.addAction("Edit Activity")
+                    edit_action.setIcon(QIcon.fromTheme("document-edit"))
+                    
+                    delete_action = menu.addAction("Delete Activity")
+                    delete_action.setIcon(QIcon.fromTheme("edit-delete"))
+                    
+                    # Show the context menu at cursor position
+                    # Convert scene position to view position, then to global screen position
+                    view_pos = self.view.mapFromScene(pos)
+                    global_pos = self.view.viewport().mapToGlobal(view_pos)
+                    
+                    action = menu.exec(global_pos)
+                    
+                    # Handle the selected action
+                    if action == view_action:
+                        self.showActivityDetails(activity_id, activity_type)
+                    elif action == complete_action:
+                        # Toggle the completion status
+                        new_status = not is_completed
+                        print(f"Toggling completion from menu: {activity_id} to {new_status}")
+                        self.toggleActivityCompletion(activity_id, new_status, activity_type)
+                    elif action == edit_action:
+                        self.editActivity(activity_id, activity_type)
+                    elif action == delete_action:
+                        self.deleteActivity(activity_id, activity_type)
+                    
+                    # Don't propagate the event further
+                    event.accept()
                     return
-        
-        # If no activity was clicked, continue with default handling
-        QGraphicsScene.mousePressEvent(self.scene, event)
+            
+            # If we get here, no activity was clicked
+            event.accept()
+                
+        except Exception as e:
+            print(f"Error showing context menu: {e}")
+            import traceback
+            traceback.print_exc()
+            event.accept()
     
+    def showActivityDetails(self, activity_id, activity_type):
+        """Show activity details in a dialog."""
+        if activity_id not in self.activity_items:
+            print(f"Activity {activity_id} not found")
+            return
+            
+        activity = self.activity_items[activity_id]['activity']
+        
+        try:
+            dialog = ActivityDetailsDialog(activity, self)
+            dialog.exec()
+        except Exception as e:
+            print(f"Error showing activity details: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def toggleActivityCompletion(self, activity_id, is_completed, activity_type):
+        """Toggle the completion status of an activity."""
+        try:
+            print(f"Weekly Plan View: Toggling activity {activity_id} ({activity_type}) completion to {is_completed}")
+            
+            # Find the activity
+            if activity_id not in self.activity_items:
+                print(f"Activity {activity_id} not found in activity_items")
+                return
+                
+            activity_item = self.activity_items[activity_id]
+            activity = activity_item['activity']
+            
+            # Update the activity's completion status
+            activity['completed'] = is_completed
+            
+            # Get the activity date - this is critical for the database update
+            activity_date = None
+            if activity.get('date'):
+                activity_date = activity.get('date')
+            elif 'day_index' in activity:
+                day_index = activity.get('day_index', 0)
+                activity_date = self.current_week_start.addDays(day_index)
+                activity['date'] = activity_date
+            
+            if not activity_date:
+                print("ERROR: Could not determine activity date - database update will fail")
+                return
+                
+            # Always emit our own signal for other components to listen to
+            print(f"Emitting activityCompletionChanged signal: {activity_id}, {is_completed}, {activity_type}")
+            self.activityCompletionChanged.emit(activity_id, is_completed, activity_type)
+            
+            # DIRECT DATABASE UPDATE - most reliable method
+            # Try all possible ways to get to an activities_manager
+            activities_manager = None
+            
+            # Priority 1: direct access
+            if hasattr(self, 'activities_manager') and self.activities_manager:
+                activities_manager = self.activities_manager
+                print(f"Using self.activities_manager")
+            # Priority 2: parent's activities_manager
+            elif hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'activities_manager'):
+                activities_manager = self.parent.activities_manager
+                print(f"Using parent.activities_manager")
+            
+            # Now use the activities_manager we found
+            if activities_manager:
+                print(f"Calling toggle_activity_completion with date={activity_date.toString()}")
+                # Use the correct method signature with date parameter
+                success = activities_manager.toggle_activity_completion(
+                    activity_id,
+                    is_completed,
+                    activity_date
+                )
+                
+                if success:
+                    print(f"Database update successful")
+                else:
+                    print(f"Database update failed")
+            else:
+                print("ERROR: No activities_manager found - cannot update database")
+                
+            # Update the visuals for this activity
+            self.updateActivityVisuals(activity_id, is_completed)
+            
+            # If parent has onActivityCompleted handler, call it
+            if hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'onActivityCompleted'):
+                print(f"Calling parent.onActivityCompleted")
+                self.parent.onActivityCompleted(activity_id, is_completed, activity_type)
+            
+            # If this is in the parent, update parent's activities view
+            if hasattr(self, 'parent') and self.parent:
+                if hasattr(self.parent, 'activities_view') and self.parent.activities_view:
+                    print(f"Refreshing parent's activities view")
+                    self.parent.activities_view.refresh()
+            
+            # If activities view exists directly, refresh it
+            if hasattr(self, 'activities_view') and self.activities_view:
+                print(f"Refreshing self.activities_view")
+                self.activities_view.refresh()
+                
+        except Exception as e:
+            print(f"Error toggling activity completion: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def updateActivityVisuals(self, activity_id, is_completed):
+        """Update the visual appearance of an activity without refreshing the whole view."""
+        try:
+            print(f"Updating visuals for activity {activity_id}, completed={is_completed}")
+            
+            if activity_id not in self.activity_items:
+                print(f"Activity {activity_id} not found in activity_items")
+                return
+                
+            activity_item = self.activity_items[activity_id]
+            activity_rect = activity_item['rect']
+            activity = activity_item['activity']
+            
+            # Update the stored completion state
+            activity['completed'] = is_completed
+            activity_rect.setData(2, is_completed)
+            
+            # Get the rectangle's properties
+            rect = activity_rect.path().boundingRect()
+            actual_x = rect.x()
+            y_pos = rect.y()
+            height = rect.height()
+            actual_width = rect.width()
+            
+            # Determine the activity color - same logic as in addActivitiesToGrid
+            if activity.get('color'):
+                color = QColor(activity.get('color'))
+            else:
+                # Use default colors based on type
+                activity_type = activity.get('type', '')
+                if activity_type == 'task':
+                    color = QColor("#F87171")  # Red
+                elif activity_type == 'event':
+                    color = QColor("#818CF8")  # Indigo
+                elif activity_type == 'habit':
+                    color = QColor("#34D399")  # Green
+                else:
+                    color = QColor("#9CA3AF")  # Gray
+            
+            # Modify color based on completion status
+            if is_completed:
+                # Lighten for completed activities
+                color = color.lighter(110)
+                color.setAlpha(180)
+            else:
+                # Regular alpha for uncompleted
+                color.setAlpha(180)
+                
+            # Update the activity rectangle's color
+            activity_rect.setBrush(QBrush(color))
+            activity_rect.setPen(QPen(color.darker(), 1))
+            
+            # Remove any existing completion indicators
+            print("Removing old completion indicators")
+            for item in self.scene.items():
+                try:
+                    # Remove green bar indicators
+                    if (isinstance(item, QPainterPath) and
+                        item != activity_rect and
+                        abs(item.pos().x() - actual_x) < 10 and  # Close to the activity
+                        abs(item.pos().y() - y_pos) < 10 and     # Close to the top of the activity
+                        item.zValue() >= 2):                    # Completion indicators have high Z values
+                        self.scene.removeItem(item)
+                        print(f"Removed an indicator item at z={item.zValue()}")
+                except Exception as e:
+                    print(f"Error checking item: {e}")
+            
+            # Add new completion indicators if completed
+            if is_completed:
+                print("Adding new completion indicator")
+                
+                # Add the green bar on the left
+                complete_path = QPainterPath()
+                complete_path.addRoundedRect(QRectF(actual_x, y_pos, 6, height), 3, 3)
+                completion_bar = self.scene.addPath(
+                    complete_path, 
+                    QPen(Qt.PenStyle.NoPen), 
+                    QBrush(QColor("#10B981"))
+                )
+                completion_bar.setZValue(2)  # Above the activity rectangle
+            
+            # Force a scene update for this area
+            self.scene.update(rect.adjusted(-20, -20, 20, 20))
+            print("Scene updated")
+                
+        except Exception as e:
+            print(f"Error updating activity visuals: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def connectParentSignals(self):
+        """Connect signals from the parent to this view."""
+        try:
+            print("Connecting parent signals...")
+            
+            # Check if parent exists
+            if not hasattr(self, 'parent') or not self.parent:
+                print("No parent found to connect signals")
+                return
+                
+            # Connect to standard activity signals if parent has them
+            if hasattr(self.parent, 'activityCompleted') and hasattr(self.parent.activityCompleted, 'connect'):
+                print("Connected to parent.activityCompleted signal")
+                self.parent.activityCompleted.connect(self.onActivityCompletedFromParent)
+            
+            # Connect to unified activities widget signals if available
+            if hasattr(self.parent, 'activities_view'):
+                activity_view = self.parent.activities_view
+                if hasattr(activity_view, 'activityCompleted') and hasattr(activity_view.activityCompleted, 'connect'):
+                    print("Connected to activities_view.activityCompleted signal")
+                    activity_view.activityCompleted.connect(self.onActivityCompletedFromParent)
+                    
+            # Connect our signals to parent and activities view for two-way synchronization
+            # First to parent
+            if hasattr(self.parent, 'onActivityCompleted'):
+                print("Connected activityCompletionChanged to parent.onActivityCompleted")
+                self.activityCompletionChanged.connect(self.parent.onActivityCompleted)
+                
+            # Then to activities view
+            if hasattr(self.parent, 'activities_view'):
+                activity_view = self.parent.activities_view
+                if hasattr(activity_view, 'onActivityCompletedFromOtherView'):
+                    print("Connected activityCompletionChanged to activities_view.onActivityCompletedFromOtherView")
+                    self.activityCompletionChanged.connect(activity_view.onActivityCompletedFromOtherView)
+                    
+        except Exception as e:
+            print(f"Error connecting parent signals: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def onActivityCompletedFromParent(self, activity_id, completed, activity_type):
+        """Handle activity completion signals from parent."""
+        try:
+            print(f"Received activity completion update from parent: {activity_id}, {completed}, {activity_type}")
+            
+            # Update our activity state
+            for activity in self.activities:
+                if activity.get('id') == activity_id:
+                    activity['completed'] = completed
+                    print(f"Updated local activity status to {completed}")
+                    break
+            
+            # Update the activity visualization
+            self.updateActivityVisuals(activity_id, completed)
+                
+        except Exception as e:
+            print(f"Error handling activity completion from parent: {e}")
+            import traceback
+            traceback.print_exc()
+            # If there's an error, refresh the whole view to ensure sync
+            self.updateWeekView()
+
     def markActivityComplete(self, activity_id, activity_type):
         """Mark an activity as complete."""
         if hasattr(self.parent, 'activities_manager'):
-            # Toggle the activity completion
-            self.parent.activities_manager.toggle_activity_completion(activity_id, True)
-            
-            # Update the activity in our local cache
+            # Find the activity to get its date
+            activity_date = None
             for activity in self.activities:
                 if activity.get('id') == activity_id:
+                    # Get the date for this activity
+                    activity_date = activity.get('date')
+                    
+                    # If date isn't available, calculate it from day_index
+                    if not activity_date and 'day_index' in activity:
+                        day_index = activity.get('day_index', 0)
+                        activity_date = self.current_week_start.addDays(day_index)
+                        activity['date'] = activity_date
+                    
+                    # Update local completion status
                     activity['completed'] = True
                     break
+            
+            # Toggle the activity completion with the specific date
+            if activity_date:
+                self.parent.activities_manager.toggle_activity_completion(
+                    activity_id, 
+                    True,
+                    activity_date
+                )
             
             # Refresh the view to reflect the changes
             self.updateWeekView()
             
+            # Also refresh the activities view if it exists
+            if hasattr(self.parent, 'activities_view') and self.parent.activities_view:
+                self.parent.activities_view.refresh()
+                
             # If the parent has an activity completion handler, call it
             if hasattr(self.parent, 'onActivityCompleted'):
-                self.parent.onActivityCompleted(activity_id, activity_type)
+                self.parent.onActivityCompleted(activity_id, True, activity_type)
     
     def editActivity(self, activity_id, activity_type):
         """Open edit dialog for an activity."""
@@ -1287,4 +1786,4 @@ class WeeklyPlanView(QWidget):
     
     def refresh(self):
         """Refresh the view data."""
-        self.loadActivities() 
+        self.loadActivities()

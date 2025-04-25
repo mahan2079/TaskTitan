@@ -506,6 +506,14 @@ class TaskTitanApp(QMainWindow):
         self.content_stack.setCurrentIndex(index)
         self.current_page = index
         
+        # Refresh data when switching to activities or weekly plan views
+        if index == 1:  # Activities view
+            if hasattr(self, 'activities_view') and self.activities_view:
+                self.activities_view.refresh()
+        elif index == 5:  # Weekly plan view
+            if hasattr(self, 'weekly_plan_view') and self.weekly_plan_view:
+                self.weekly_plan_view.refresh()
+        
         # Update sidebar button styling
         for button in self.sidebarButtons:
             button.setProperty("selected", False)
@@ -1182,7 +1190,7 @@ class TaskTitanApp(QMainWindow):
         if activity.get('type') == 'event' and hasattr(self, 'dashboard_calendar') and hasattr(self, 'activities_manager'):
             self.dashboard_calendar.sync_with_activities(self.activities_manager)
         
-    def onActivityCompleted(self, activity_id, activity_type):
+    def onActivityCompleted(self, activity_id, completed, activity_type):
         """Handle when an activity is marked as completed."""
         # Refresh the dashboard counters
         self.refreshData()
