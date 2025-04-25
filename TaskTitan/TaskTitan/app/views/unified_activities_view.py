@@ -458,6 +458,11 @@ class UnifiedActivitiesView(QWidget):
         edit_action = menu.addAction("Edit")
         delete_action = menu.addAction("Delete")
         
+        # Add "Delete for Today Only" option for habits
+        delete_today_action = None
+        if hasattr(widget, 'activity_type') and widget.activity_type == 'habit':
+            delete_today_action = menu.addAction("Delete for Today Only")
+        
         # Show the menu and get the selected action
         action = menu.exec(self.activities_list.mapToGlobal(position))
         
@@ -472,6 +477,9 @@ class UnifiedActivitiesView(QWidget):
                 self.deleteActivity(widget.task_id, 'task')
             elif hasattr(widget, 'activity_id'):
                 self.deleteActivity(widget.activity_id, widget.activity_type)
+        elif action == delete_today_action:
+            if hasattr(widget, 'activity_id'):
+                self.deleteHabitForToday(widget.activity_id)
     
     def editActivity(self, activity_id, activity_type):
         """Edit an existing activity."""
@@ -681,6 +689,67 @@ class UnifiedActivitiesView(QWidget):
     def refresh(self):
         """Refresh the view."""
         self.loadActivities()
+
+    def deleteHabitForToday(self, activity_id):
+        """Delete a habit for the current day only, without removing the habit completely."""
+        # Confirm deletion
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Deletion for Today",
+            "Are you sure you want to delete this habit for today only?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if confirm == QMessageBox.StandardButton.Yes:
+            # Find the habit in our list
+            habit = None
+            for h in self.activities['habit']:
+                if h['id'] == activity_id:
+                    habit = h
+                    break
+            
+            if habit:
+                # Get the current day of the week
+                current_day = self.current_date.toString("dddd")  # e.g., "Monday"
+                
+                # Get the current days of the week for this habit
+                days_of_week = habit['days_of_week'].split(",")
+                
+                # Remove the current day if it exists in the list
+                if current_day in days_of_week:
+                    days_of_week.remove(current_day)
+                    
+                    # Update the habit with the new days of week
+                    habit['days_of_week'] = ",".join(days_of_week)
+                    
+                    # Update in database if possible
+                    if hasattr(self.parent, 'conn') and self.parent.conn:
+                        try:
+                            self.parent.cursor.execute(
+                                "UPDATE activities SET days_of_week = ? WHERE id = ?",
+                                (habit['days_of_week'], activity_id)
+                            )
+                            self.parent.conn.commit()
+                        except Exception as e:
+                            print(f"Error updating habit days of week: {e}")
+                    
+                    # Emit signal so parent widgets can update
+                    self.activityDeleted.emit(activity_id, 'habit')
+                    
+                    # Refresh the activities list
+                    self.refreshActivitiesList()
+                    
+                    QMessageBox.information(
+                        self,
+                        "Habit Removed for Today",
+                        f"This habit will no longer appear on {current_day}s."
+                    )
+                else:
+                    QMessageBox.information(
+                        self,
+                        "No Change Needed",
+                        f"This habit is not scheduled for {current_day}s."
+                    )
 
 class ActivityItemWidget(QWidget):
     """Custom widget for displaying an activity in the list."""

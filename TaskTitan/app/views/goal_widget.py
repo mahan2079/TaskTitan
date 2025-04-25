@@ -8,9 +8,9 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                            QTabWidget, QGraphicsView, QGraphicsScene, QGraphicsRectItem, 
                            QGraphicsTextItem, QGraphicsLineItem, QSlider, QGraphicsItem,
                            QGraphicsSceneWheelEvent, QGraphicsPathItem, QGraphicsEllipseItem,
-                           QGraphicsDropShadowEffect)
+                           QGraphicsDropShadowEffect, QProgressBar)
 from PyQt6.QtCore import Qt, QDate, QTime, pyqtSignal, QRectF, QPointF, QTimer, QEvent, QPoint
-from PyQt6.QtGui import QIcon, QFont, QColor, QPen, QBrush, QWheelEvent, QPainter, QPainterPath
+from PyQt6.QtGui import QIcon, QFont, QColor, QPen, QBrush, QWheelEvent, QPainter, QPainterPath, QAction
 from datetime import datetime, timedelta
 import random
 
@@ -1062,24 +1062,43 @@ class GoalWidget(QWidget):
         # Header
         header = QWidget()
         header.setObjectName("goalHeader")
-        header.setMinimumHeight(60)
+        header.setMinimumHeight(70)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(20, 10, 20, 10)
+        header_layout.setContentsMargins(25, 15, 25, 15)
         
-        # Title
+        # Title with icon
+        title_layout = QHBoxLayout()
+        title_layout.setSpacing(10)
+        
+        # Add goal icon
+        icon_label = QLabel()
+        goal_icon = get_icon("goals")
+        if not goal_icon.isNull():
+            icon_label.setPixmap(goal_icon.pixmap(32, 32))
+        else:
+            # Fallback icon text
+            icon_label.setText("🎯")
+            icon_label.setStyleSheet("font-size: 24px;")
+        title_layout.addWidget(icon_label)
+        
+        # Title text
         title = QLabel("My Goals")
         title.setObjectName("goalTitle")
         font = QFont()
-        font.setPointSize(14)
+        font.setPointSize(16)
         font.setBold(True)
         title.setFont(font)
-        header_layout.addWidget(title)
+        title_layout.addWidget(title)
+        
+        header_layout.addLayout(title_layout)
+        header_layout.addStretch(1)
         
         # Add goal button
         self.add_btn = QPushButton("Add Goal")
         self.add_btn.setObjectName("addGoalButton")
         self.add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.add_btn.setMinimumWidth(100)
+        self.add_btn.setMinimumWidth(120)
+        self.add_btn.setMinimumHeight(40)
         self.add_btn.clicked.connect(self.showAddGoalDialog)
         
         # Add icon to button
@@ -1087,45 +1106,270 @@ class GoalWidget(QWidget):
         if not add_icon.isNull():
             self.add_btn.setIcon(add_icon)
         
+        # Style the button
+        self.add_btn.setStyleSheet("""
+            QPushButton#addGoalButton {
+                background-color: #3B82F6;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 8px 16px;
+                font-weight: bold;
+            }
+            QPushButton#addGoalButton:hover {
+                background-color: #2563EB;
+            }
+            QPushButton#addGoalButton:pressed {
+                background-color: #1D4ED8;
+            }
+        """)
+        
         header_layout.addWidget(self.add_btn)
         
-        main_layout.addWidget(header)
+        # Style the header
+        header.setStyleSheet("""
+            QWidget#goalHeader {
+                background-color: white;
+                border-bottom: 1px solid #E2E8F0;
+            }
+            QLabel#goalTitle {
+                color: #1E293B;
+            }
+        """)
         
-        # Separator
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        separator.setObjectName("goalSeparator")
-        separator.setFixedHeight(1)
-        main_layout.addWidget(separator)
+        main_layout.addWidget(header)
         
         # Create tab widget for different goal views
         self.tab_widget = QTabWidget()
         self.tab_widget.setObjectName("goalTabWidget")
         
-        # Tree view tab
+        # Tree view tab with modern styling
         self.tree_tab = QWidget()
         tree_layout = QVBoxLayout(self.tree_tab)
-        tree_layout.setContentsMargins(0, 0, 0, 0)
+        tree_layout.setContentsMargins(25, 25, 25, 25)
+        tree_layout.setSpacing(15)
         
-        # Goal tree widget
+        # Filter/search section
+        filter_layout = QHBoxLayout()
+        filter_layout.setSpacing(10)
+        
+        # Search input field
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search goals...")
+        self.search_input.setMinimumWidth(250)
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self.handleSearchTextChanged)
+        self.search_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #F8FAFC;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: #1E293B;
+            }
+            QLineEdit:focus {
+                border: 1px solid #3B82F6;
+            }
+        """)
+        filter_layout.addWidget(self.search_input)
+        
+        # Search button
+        search_btn = QPushButton("Search")
+        search_icon = get_icon("search")
+        if not search_icon.isNull():
+            search_btn.setIcon(search_icon)
+        search_btn.clicked.connect(self.handleSearchButtonClicked)
+        search_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #F1F5F9;
+                color: #64748B;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #E2E8F0;
+            }
+        """)
+        filter_layout.addWidget(search_btn)
+        
+        # Filter dropdown
+        self.filter_menu = QMenu(self)
+        
+        # Filter by completion status
+        filter_status_menu = QMenu("Completion Status", self.filter_menu)
+        self.filter_menu.addMenu(filter_status_menu)
+        
+        # All goals action
+        self.action_all_goals = QAction("All Goals", self)
+        self.action_all_goals.setCheckable(True)
+        self.action_all_goals.setChecked(True)
+        self.action_all_goals.triggered.connect(lambda: self.filterByCompletionStatus(None))
+        filter_status_menu.addAction(self.action_all_goals)
+        
+        # Completed goals action
+        self.action_completed = QAction("Completed", self)
+        self.action_completed.setCheckable(True)
+        self.action_completed.triggered.connect(lambda: self.filterByCompletionStatus(True))
+        filter_status_menu.addAction(self.action_completed)
+        
+        # Incomplete goals action
+        self.action_incomplete = QAction("Incomplete", self)
+        self.action_incomplete.setCheckable(True)
+        self.action_incomplete.triggered.connect(lambda: self.filterByCompletionStatus(False))
+        filter_status_menu.addAction(self.action_incomplete)
+        
+        # Filter by priority
+        filter_priority_menu = QMenu("Priority", self.filter_menu)
+        self.filter_menu.addMenu(filter_priority_menu)
+        
+        # All priorities action
+        self.action_all_priorities = QAction("All Priorities", self)
+        self.action_all_priorities.setCheckable(True)
+        self.action_all_priorities.setChecked(True)
+        self.action_all_priorities.triggered.connect(lambda: self.filterByPriority(None))
+        filter_priority_menu.addAction(self.action_all_priorities)
+        
+        # Low priority action
+        self.action_low_priority = QAction("Low Priority", self)
+        self.action_low_priority.setCheckable(True)
+        self.action_low_priority.triggered.connect(lambda: self.filterByPriority(0))
+        filter_priority_menu.addAction(self.action_low_priority)
+        
+        # Medium priority action
+        self.action_medium_priority = QAction("Medium Priority", self)
+        self.action_medium_priority.setCheckable(True)
+        self.action_medium_priority.triggered.connect(lambda: self.filterByPriority(1))
+        filter_priority_menu.addAction(self.action_medium_priority)
+        
+        # High priority action
+        self.action_high_priority = QAction("High Priority", self)
+        self.action_high_priority.setCheckable(True)
+        self.action_high_priority.triggered.connect(lambda: self.filterByPriority(2))
+        filter_priority_menu.addAction(self.action_high_priority)
+        
+        # Reset filters action
+        self.filter_menu.addSeparator()
+        self.action_reset_filters = QAction("Reset All Filters", self)
+        self.action_reset_filters.triggered.connect(self.resetFilters)
+        self.filter_menu.addAction(self.action_reset_filters)
+        
+        # Filter button
+        self.filter_btn = QPushButton("Filter")
+        self.filter_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #F1F5F9;
+                color: #64748B;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #E2E8F0;
+            }
+        """)
+        self.filter_btn.clicked.connect(self.showFilterMenu)
+        filter_layout.addWidget(self.filter_btn)
+        
+        # Add a clear filters button
+        self.clear_filters_btn = QPushButton("Clear Filters")
+        self.clear_filters_btn.setVisible(False)
+        self.clear_filters_btn.clicked.connect(self.resetFilters)
+        self.clear_filters_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #EF4444;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #DC2626;
+            }
+        """)
+        filter_layout.addWidget(self.clear_filters_btn)
+        
+        filter_layout.addStretch(1)
+        
+        tree_layout.addLayout(filter_layout)
+        
+        # Filter status label to show active filters
+        self.filter_status_label = QLabel("")
+        self.filter_status_label.setVisible(False)
+        self.filter_status_label.setStyleSheet("color: #4B5563; font-style: italic;")
+        tree_layout.addWidget(self.filter_status_label)
+        
+        # Goal tree widget with modern styling
         self.goal_tree = QTreeWidget()
         self.goal_tree.setObjectName("goalTree")
-        self.goal_tree.setColumnCount(5)  # Added a column for progress percentage
+        self.goal_tree.setColumnCount(5)  # Goal, Due Date, Due Time, Progress, Status
         self.goal_tree.setHeaderLabels(["Goal", "Due Date", "Due Time", "Progress", "Status"])
-        self.goal_tree.setAlternatingRowColors(True)
+        self.goal_tree.setAlternatingRowColors(False)  # Disable alternating row colors
         self.goal_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
         self.goal_tree.setAnimated(True)
-        self.goal_tree.setIndentation(20)
+        self.goal_tree.setIndentation(24)
         self.goal_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.goal_tree.customContextMenuRequested.connect(self.showContextMenu)
         self.goal_tree.itemChanged.connect(self.handleItemStatusChanged)
+        
+        # Apply modern styling to the tree widget
+        self.goal_tree.setStyleSheet("""
+            QTreeWidget {
+                background-color: white;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+                padding: 8px;
+                font-size: 13px;
+            }
+            QTreeWidget::item {
+                border-bottom: 1px solid #F1F5F9;
+                padding: 10px 2px;
+                margin: 2px 0;
+                background-color: transparent;
+            }
+            QTreeWidget::item:selected {
+                background-color: rgba(235, 244, 255, 0.7);
+                color: #1E293B;
+                border: none;
+                border-radius: 6px;
+            }
+            QTreeWidget::item:hover {
+                background-color: rgba(247, 250, 252, 0.7);
+                border-radius: 6px;
+            }
+            QTreeWidget::item:alternate {
+                background-color: transparent;
+            }
+            QHeaderView::section {
+                background-color: #F8FAFC;
+                padding: 12px 8px;
+                border: none;
+                font-weight: bold;
+                color: #334155;
+                font-size: 13px;
+            }
+            QTreeWidget::item:focus {
+                border: none;
+                outline: none;
+            }
+            QTreeView::branch {
+                background-color: transparent;
+            }
+            QTreeView::branch:has-children:!has-siblings:closed,
+            QTreeView::branch:closed:has-children:has-siblings {
+                image: url(app/resources/icons/chevron-right.png);
+            }
+            QTreeView::branch:open:has-children:!has-siblings,
+            QTreeView::branch:open:has-children:has-siblings {
+                image: url(app/resources/icons/chevron-down.png);
+            }
+        """)
         
         # Set column widths
         self.goal_tree.setColumnWidth(0, 300)  # Goal title
         self.goal_tree.setColumnWidth(1, 100)  # Due date
         self.goal_tree.setColumnWidth(2, 80)   # Due time
-        self.goal_tree.setColumnWidth(3, 100)  # Progress
+        self.goal_tree.setColumnWidth(3, 120)  # Progress
         self.goal_tree.setColumnWidth(4, 80)   # Status
         
         tree_layout.addWidget(self.goal_tree)
@@ -1136,72 +1380,40 @@ class GoalWidget(QWidget):
         # Add tabs to tab widget
         self.tab_widget.addTab(self.tree_tab, "List View")
         self.tab_widget.addTab(self.timeline_widget, "Timeline")
-        
-        # Connect tab change signal
         self.tab_widget.currentChanged.connect(self.handleTabChange)
+        
+        # Apply tab style
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: none;
+                background: white;
+            }
+            QTabBar::tab {
+                background: #F1F5F9;
+                color: #64748B;
+                min-width: 150px;
+                padding: 12px 24px;
+                margin-right: 4px;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                font-weight: bold;
+            }
+            QTabBar::tab:selected {
+                background: #3B82F6;
+                color: white;
+            }
+            QTabBar::tab:hover:!selected {
+                background: #CBD5E1;
+            }
+        """)
         
         main_layout.addWidget(self.tab_widget)
         
-        # Apply styles
-        self.setStyleSheet("""
-            #goalHeader {
-                background-color: #FFFFFF;
-                border-top-left-radius: 8px;
-                border-top-right-radius: 8px;
-            }
-            #goalTitle {
-                color: #111827;
-            }
-            #addGoalButton {
-                background-color: #4F46E5;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-            #addGoalButton:hover {
-                background-color: #4338CA;
-            }
-            #addGoalButton:pressed {
-                background-color: #3730A3;
-            }
-            #goalSeparator {
-                background-color: #E5E7EB;
-            }
-            #goalTree {
-                background-color: #F9FAFB;
-                border: none;
-            }
-            QTreeWidget::item {
-                padding: 6px 0;
-            }
-            QTreeWidget::item:selected {
-                background-color: #EEF2FF;
-            }
-            #goalTabWidget::pane {
-                border: none;
-                background-color: #F9FAFB;
-            }
-            #goalTabWidget::tab-bar {
-                alignment: left;
-            }
-            #goalTabWidget > QTabBar::tab {
-                background-color: #E2E8F0;
-                color: #475569;
-                padding: 8px 16px;
-                margin-right: 4px;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
-            }
-            #goalTabWidget > QTabBar::tab:selected {
-                background-color: #4F46E5;
-                color: white;
-            }
-            #goalTabWidget > QTabBar::tab:hover:!selected {
-                background-color: #CBD5E1;
-            }
-        """)
+        # Load initial data
+        self.loadGoals()
+        
+        # Expand all items by default for better visibility
+        self.goal_tree.expandAll()
     
     def handleTabChange(self, index):
         """Handle tab changes."""
@@ -1383,14 +1595,15 @@ class GoalWidget(QWidget):
                 if subgoal['completed']:
                     completed_duration += duration
                 else:
-                    # If not completed, add partial progress based on time
-                    subgoal_progress = self.calculateTimeBasedProgress(subgoal) / 100.0
+                    # For incomplete subgoals that have their own subgoals, 
+                    # calculate their progress recursively
+                    subgoal_progress = self.calculateGoalProgress(subgoal) / 100.0
                     completed_duration += duration * subgoal_progress
             except (ValueError, TypeError, KeyError):
                 # Skip if there are issues with the dates
                 continue
         
-        # Calculate progress based solely on subgoal completion (100% model)
+        # Calculate progress based on weighted subgoal completion
         if total_duration > 0:
             progress = (completed_duration / total_duration) * 100
         else:
@@ -1447,6 +1660,9 @@ class GoalWidget(QWidget):
                 self.goal_tree.blockSignals(True)
                 
                 goal_id = item.data(0, Qt.ItemDataRole.UserRole)
+                if goal_id is None:
+                    return  # No goal ID associated with this item
+                    
                 completed = item.checkState(4) == Qt.CheckState.Checked
                 
                 # Update database if connection exists
@@ -1487,8 +1703,11 @@ class GoalWidget(QWidget):
                 # Unblock signals
                 self.goal_tree.blockSignals(False)
                 
-                # Refresh the entire tree for immediate visual update
-                self.refreshGoalTree()
+                # Update visual appearance of this item and its progress
+                self.updateItemAppearance(item, completed)
+                
+                # Update the progress indicators
+                self.updateAffectedProgressBars(goal_id)
                 
                 # Also update timeline if it's active
                 if self.tab_widget.currentIndex() == 1:
@@ -1498,6 +1717,102 @@ class GoalWidget(QWidget):
                 # Re-enable signals in case of exception
                 self.goal_tree.blockSignals(False)
                 print(f"Error in handleItemStatusChanged: {e}")
+                import traceback
+                traceback.print_exc()
+
+    def updateItemAppearance(self, item, completed):
+        """Update the visual appearance of an item after status change."""
+        try:
+            # Get goal ID
+            goal_id = item.data(0, Qt.ItemDataRole.UserRole)
+            
+            # Find goal data
+            goal = None
+            for g in self.goals:
+                if g['id'] == goal_id:
+                    goal = g
+                    break
+                    
+            if not goal:
+                return
+                
+            # Update text color based on completion status
+            if completed:
+                item.setForeground(0, QColor("#047857"))  # Dark green text
+                
+                # Add checkmark icon
+                check_icon = QIcon.fromTheme("emblem-ok", QIcon())
+                if not check_icon.isNull():
+                    item.setIcon(0, check_icon)
+            else:
+                # Reset to black text
+                item.setForeground(0, QColor("#000000"))  # Black text
+                item.setIcon(0, QIcon())  # Remove icon
+            
+            # Recalculate progress
+            progress = self.calculateGoalProgress(goal)
+            
+            # Store progress for the progress bar
+            item.setData(3, Qt.ItemDataRole.UserRole, progress)
+            
+            # Update the progress text
+            item.setText(3, f"{progress}%")
+            
+            # Re-create the progress bar widget
+            self._processTreeItemProgress(item)
+        except Exception as e:
+            print(f"Error updating item appearance: {e}")
+
+    def updateAffectedProgressBars(self, goal_id):
+        """Update progress bars for a goal and its parents."""
+        try:
+            # First find the goal
+            goal = None
+            for g in self.goals:
+                if g['id'] == goal_id:
+                    goal = g
+                    break
+                    
+            if not goal:
+                return
+                
+            # If it has a parent, update parent progress bars recursively
+            if goal['parent_id'] is not None:
+                parent_item = self.findParentItem(goal['parent_id'])
+                if parent_item:
+                    self.updateItemProgressBar(parent_item)
+                    self.updateAffectedProgressBars(goal['parent_id'])
+        except Exception as e:
+            print(f"Error updating affected progress bars: {e}")
+
+    def updateItemProgressBar(self, item):
+        """Update the progress bar for a specific item."""
+        try:
+            goal_id = item.data(0, Qt.ItemDataRole.UserRole)
+            
+            # Find goal
+            goal = None
+            for g in self.goals:
+                if g['id'] == goal_id:
+                    goal = g
+                    break
+                    
+            if not goal:
+                return
+                
+            # Recalculate progress
+            progress = self.calculateGoalProgress(goal)
+            
+            # Store progress for the progress bar
+            item.setData(3, Qt.ItemDataRole.UserRole, progress)
+            
+            # Update the progress text
+            item.setText(3, f"{progress}%")
+            
+            # Re-create the progress bar widget
+            self._processTreeItemProgress(item)
+        except Exception as e:
+            print(f"Error updating item progress bar: {e}")
     
     def uncheckParent(self, parent_item):
         """Uncheck parent and propagate up the hierarchy when a child is unchecked."""
@@ -1906,34 +2221,116 @@ class GoalWidget(QWidget):
                 except Exception as e:
                     print(f"Error adding root goal {goal['id']} to tree: {e}")
             
-            # Now add any remaining goals that haven't been added yet
-            # (in case of orphaned goals or circular references)
-            remaining_goals = [g for g in self.goals if g['id'] not in added_goal_ids]
-            if remaining_goals:
-                print(f"Warning: Found {len(remaining_goals)} goals with missing or circular parent references")
-                for goal in remaining_goals:
-                    try:
-                        # Add as top level
-                        item = self.addGoalToTreeOptimized(goal, None, goal_progress)
-                        added_goal_ids.add(goal['id'])
-                    except Exception as e:
-                        print(f"Error adding orphaned goal {goal['id']} to tree: {e}")
-            
-            # Expand all items
-            self.goal_tree.expandAll()
-            
-            # Restore selection if applicable
+            # Create progress bar widgets for all items
+            self.postProcessTreeItems()
+                
+            # Reselect previously selected item if it exists
             if selected_id:
                 self.selectGoalItemById(selected_id)
             
-            # Unblock signals
-            self.goal_tree.blockSignals(False)
+            # Restore expanded state if needed
+            
+            # Finally, ensure everything is visible
+            self.goal_tree.expandAll()
             
         except Exception as e:
-            # Make sure signals are unblocked even if there's an error
-            self.goal_tree.blockSignals(False)
             print(f"Error refreshing goal tree: {e}")
+        finally:
+            # Unblock signals
+            self.goal_tree.blockSignals(False)
+
+    def postProcessTreeItems(self):
+        """Process all tree items to add custom widgets for progress."""
+        # Create a custom progress widget for each item
+        for i in range(self.goal_tree.topLevelItemCount()):
+            top_item = self.goal_tree.topLevelItem(i)
+            self._processTreeItemProgress(top_item)
             
+    def _processTreeItemProgress(self, item):
+        """Recursively process tree items to add progress bars."""
+        try:
+            # Get the progress value stored in the item data
+            progress = item.data(3, Qt.ItemDataRole.UserRole)
+            
+            if progress is not None:
+                # Create a progress bar widget
+                progress_widget = QWidget()
+                progress_layout = QHBoxLayout(progress_widget)
+                progress_layout.setContentsMargins(4, 2, 4, 2)
+                progress_layout.setSpacing(8)
+                
+                # Create the progress bar using QProgressBar
+                progress_bar = QProgressBar(progress_widget)
+                progress_bar.setFixedHeight(12)
+                progress_bar.setTextVisible(False)
+                progress_bar.setMinimumWidth(60)
+                progress_bar.setValue(int(progress))
+                
+                # Set color based on progress
+                if progress < 30:
+                    # Red for low progress
+                    style_color = """
+                        QProgressBar {
+                            background-color: #FEE2E2;
+                            border-radius: 6px;
+                            border: none;
+                        }
+                        QProgressBar::chunk {
+                            background-color: #EF4444;
+                            border-radius: 6px;
+                        }
+                    """
+                    text_color = "#EF4444"
+                elif progress < 70:
+                    # Yellow/Orange for medium progress
+                    style_color = """
+                        QProgressBar {
+                            background-color: #FEF3C7;
+                            border-radius: 6px;
+                            border: none;
+                        }
+                        QProgressBar::chunk {
+                            background-color: #F59E0B;
+                            border-radius: 6px;
+                        }
+                    """
+                    text_color = "#F59E0B"
+                else:
+                    # Green for high progress
+                    style_color = """
+                        QProgressBar {
+                            background-color: #D1FAE5;
+                            border-radius: 6px;
+                            border: none;
+                        }
+                        QProgressBar::chunk {
+                            background-color: #10B981;
+                            border-radius: 6px;
+                        }
+                    """
+                    text_color = "#10B981"
+                    
+                # Apply styling
+                progress_bar.setStyleSheet(style_color)
+                
+                # Add progress bar to layout
+                progress_layout.addWidget(progress_bar, 7)  # 70% width for bar
+                
+                # Add text label
+                text_label = QLabel(f"{int(progress)}%")
+                text_label.setStyleSheet(f"color: {text_color}; font-weight: bold;")
+                progress_layout.addWidget(text_label, 3)  # 30% width for text
+                
+                # Set the widget in the tree
+                self.goal_tree.setItemWidget(item, 3, progress_widget)
+            
+            # Process children recursively
+            for i in range(item.childCount()):
+                child = item.child(i)
+                self._processTreeItemProgress(child)
+        except Exception as e:
+            print(f"Error processing tree item progress: {e}")
+    
     def selectGoalItemById(self, goal_id):
         """Find and select a goal item by ID."""
         try:
@@ -1966,43 +2363,63 @@ class GoalWidget(QWidget):
             return False
 
     def addGoalToTreeOptimized(self, goal, parent_item=None, goal_progress=None):
-        """Optimized version of addGoalToTree using pre-calculated progress."""
-        # Create a new tree item
-        item = QTreeWidgetItem()
-        item.setText(0, goal['title'])
-        item.setText(1, goal['due_date'])
-        item.setText(2, goal['due_time'])
-        item.setData(0, Qt.ItemDataRole.UserRole, goal['id'])
+        """Add a goal to the tree widget with optimized progress calculation.
         
-        # Get progress percentage from pre-calculated dict or calculate it
-        if goal_progress and goal['id'] in goal_progress:
-            progress = goal_progress[goal['id']]
-        else:
-            progress = self.calculateGoalProgress(goal)
+        Args:
+            goal: The goal to add
+            parent_item: The parent tree item (if any)
+            goal_progress: Pre-calculated progress values (optimization)
             
+        Returns:
+            QTreeWidgetItem: The created tree item
+        """
+        # Create item
+        item = QTreeWidgetItem()
+        
+        # Get progress
+        progress = goal_progress.get(goal['id']) if goal_progress is not None else self.calculateGoalProgress(goal)
+        
+        # Set item data
+        item.setData(0, Qt.ItemDataRole.UserRole, goal['id'])
+        item.setText(0, goal['title'])
+        item.setText(1, goal.get('due_date', ''))
+        item.setText(2, goal.get('due_time', ''))
+        
+        # Create a custom progress display with visual indicator and text
         progress_text = f"{progress}%"
         item.setText(3, progress_text)
         
-        # Set the status checkbox
+        # Create status checkbox (column 4)
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-        status = Qt.CheckState.Checked if goal['completed'] else Qt.CheckState.Unchecked
-        item.setCheckState(4, status)
+        check_state = Qt.CheckState.Checked if goal['completed'] else Qt.CheckState.Unchecked
+        item.setCheckState(4, check_state)
         
         # Set progress text color based on percentage
         if progress < 30:
-            item.setForeground(3, QColor("#EF4444"))  # Red for low progress
+            progress_color = QColor("#EF4444")  # Red for low progress
         elif progress < 70:
-            item.setForeground(3, QColor("#F59E0B"))  # Orange/Yellow for medium progress
+            progress_color = QColor("#F59E0B")  # Orange/Yellow for medium progress
         else:
-            item.setForeground(3, QColor("#10B981"))  # Green for high progress
+            progress_color = QColor("#10B981")  # Green for high progress
         
-        # Set priority color
-        if goal['priority'] == 0:  # Low
-            item.setBackground(0, QColor("#D1FAE5"))  # Light green
-        elif goal['priority'] == 1:  # Medium
-            item.setBackground(0, QColor("#FEF3C7"))  # Light yellow
-        else:  # High
-            item.setBackground(0, QColor("#FEE2E2"))  # Light red
+        item.setForeground(3, progress_color)
+        
+        # Create and set a custom progress widget for the progress column
+        # (This will be created when item is added to tree in postProcessTreeItems)
+        item.setData(3, Qt.ItemDataRole.UserRole, progress)
+        
+        # Apply custom styling based on completion status but without backgrounds
+        if goal['completed']:
+            # Set completed item text to dark green without background
+            item.setForeground(0, QColor("#047857"))  # Dark green text
+            
+            # Add a checkmark icon to column 0
+            check_icon = QIcon.fromTheme("emblem-ok", QIcon())
+            if not check_icon.isNull():
+                item.setIcon(0, check_icon)
+        else:
+            # Set text to black for all other items
+            item.setForeground(0, QColor("#000000"))  # Black text
         
         # Add to parent or root
         if parent_item:
@@ -2268,3 +2685,279 @@ class GoalWidget(QWidget):
         
         # Close the dialog
         dialog.accept() 
+
+    def handleSearchTextChanged(self, text):
+        """Handle search input changes and filter goals accordingly."""
+        if text.strip():
+            self.applyFilters()
+        else:
+            # If search field is cleared, reapply any other active filters
+            # or reset if no other filters
+            if not self.hasActiveFilters():
+                self.resetFilters()
+            else:
+                self.applyFilters()
+
+    def handleSearchButtonClicked(self):
+        """Handle search button clicks."""
+        search_text = self.search_input.text().strip()
+        if search_text:
+            self.applyFilters()
+            
+    def showFilterMenu(self):
+        """Show the filter menu when filter button is clicked."""
+        self.filter_menu.exec(self.filter_btn.mapToGlobal(QPoint(0, self.filter_btn.height())))
+
+    def filterByCompletionStatus(self, completed):
+        """Filter goals by completion status."""
+        # Uncheck other status actions
+        for action in [self.action_all_goals, self.action_completed, self.action_incomplete]:
+            action.setChecked(False)
+            
+        # Check the selected action
+        if completed is None:
+            self.action_all_goals.setChecked(True)
+        elif completed:
+            self.action_completed.setChecked(True)
+        else:
+            self.action_incomplete.setChecked(True)
+            
+        # Apply the filter
+        self.applyFilters()
+        
+    def filterByPriority(self, priority):
+        """Filter goals by priority level."""
+        # Uncheck other priority actions
+        for action in [self.action_all_priorities, self.action_low_priority, 
+                      self.action_medium_priority, self.action_high_priority]:
+            action.setChecked(False)
+            
+        # Check the selected action
+        if priority is None:
+            self.action_all_priorities.setChecked(True)
+        elif priority == 0:
+            self.action_low_priority.setChecked(True)
+        elif priority == 1:
+            self.action_medium_priority.setChecked(True)
+        else:
+            self.action_high_priority.setChecked(True)
+            
+        # Apply the filter
+        self.applyFilters()
+        
+    def resetFilters(self):
+        """Reset all filters to default values."""
+        # Clear search field
+        self.search_input.clear()
+        
+        # Reset completion status
+        self.action_all_goals.setChecked(True)
+        self.action_completed.setChecked(False)
+        self.action_incomplete.setChecked(False)
+        
+        # Reset priority
+        self.action_all_priorities.setChecked(True)
+        self.action_low_priority.setChecked(False)
+        self.action_medium_priority.setChecked(False)
+        self.action_high_priority.setChecked(False)
+        
+        # Hide filter indicators
+        self.clear_filters_btn.setVisible(False)
+        self.filter_status_label.setVisible(False)
+        
+        # Refresh the tree with all goals
+        self.refreshGoalTree()
+        
+    def hasActiveFilters(self):
+        """Check if any filters are currently active."""
+        # Check search text
+        if self.search_input.text().strip():
+            return True
+            
+        # Check completion status
+        if not self.action_all_goals.isChecked():
+            return True
+            
+        # Check priority
+        if not self.action_all_priorities.isChecked():
+            return True
+            
+        return False
+        
+    def applyFilters(self):
+        """Apply all active filters to the goal tree."""
+        try:
+            # Get filter values
+            search_text = self.search_input.text().lower().strip()
+            
+            # Get completion status filter
+            if self.action_completed.isChecked():
+                completion_filter = True
+            elif self.action_incomplete.isChecked():
+                completion_filter = False
+            else:
+                completion_filter = None
+                
+            # Get priority filter
+            if self.action_low_priority.isChecked():
+                priority_filter = 0
+            elif self.action_medium_priority.isChecked():
+                priority_filter = 1
+            elif self.action_high_priority.isChecked():
+                priority_filter = 2
+            else:
+                priority_filter = None
+                
+            # Update filter status UI
+            self.updateFilterStatusUI(search_text, completion_filter, priority_filter)
+            
+            # Filter the goals
+            self.filterGoalTree(search_text, completion_filter, priority_filter)
+            
+        except Exception as e:
+            print(f"Error applying filters: {e}")
+            import traceback
+            traceback.print_exc()
+            
+    def updateFilterStatusUI(self, search_text, completion_filter, priority_filter):
+        """Update UI to reflect active filters."""
+        has_filters = False
+        filter_descriptions = []
+        
+        # Check search filter
+        if search_text:
+            has_filters = True
+            filter_descriptions.append(f'Search: "{search_text}"')
+            
+        # Check completion filter
+        if completion_filter is not None:
+            has_filters = True
+            status = "Completed" if completion_filter else "Incomplete"
+            filter_descriptions.append(f"Status: {status}")
+            
+        # Check priority filter
+        if priority_filter is not None:
+            has_filters = True
+            priority_names = {0: "Low", 1: "Medium", 2: "High"}
+            filter_descriptions.append(f"Priority: {priority_names[priority_filter]}")
+            
+        # Update UI based on filter state
+        if has_filters:
+            self.clear_filters_btn.setVisible(True)
+            self.filter_status_label.setText("Active filters: " + ", ".join(filter_descriptions))
+            self.filter_status_label.setVisible(True)
+        else:
+            self.clear_filters_btn.setVisible(False)
+            self.filter_status_label.setVisible(False)
+            
+    def filterGoalTree(self, search_text, completion_filter, priority_filter):
+        """Filter the goal tree based on the given criteria."""
+        try:
+            # Block signals temporarily while rebuilding the tree
+            self.goal_tree.blockSignals(True)
+            
+            # Store current expanded state if needed
+            expanded_items = {}
+            selection = self.goal_tree.selectedItems()
+            selected_id = None
+            if selection:
+                selected_id = selection[0].data(0, Qt.ItemDataRole.UserRole)
+            
+            # Clear existing items
+            self.goal_tree.clear()
+            
+            # Filter goals based on criteria
+            filtered_goals = self.filterGoals(search_text, completion_filter, priority_filter)
+            
+            # Find root goals after filtering (those with parent_id None or parent not in filtered list)
+            root_goals = [g for g in filtered_goals if g['parent_id'] is None]
+            
+            # Also include goals whose parents aren't in the filtered list as roots
+            parent_ids = {g['id'] for g in filtered_goals}
+            orphaned_goals = [g for g in filtered_goals 
+                             if g['parent_id'] is not None and g['parent_id'] not in parent_ids]
+            root_goals.extend(orphaned_goals)
+            
+            # Pre-calculate progress for all filtered goals
+            goal_progress = {}
+            for goal in filtered_goals:
+                goal_progress[goal['id']] = self.calculateGoalProgress(goal)
+            
+            # Add root goals to tree
+            added_goal_ids = set()
+            for goal in root_goals:
+                try:
+                    item = self.addGoalToTreeOptimized(goal, None, goal_progress)
+                    added_goal_ids.add(goal['id'])
+                    
+                    # Find all children for this goal that are in the filtered list
+                    children = [g for g in filtered_goals if g['parent_id'] == goal['id']]
+                    
+                    # Add children recursively
+                    for child in children:
+                        self.addFilteredSubGoals(child, item, filtered_goals, added_goal_ids, goal_progress)
+                except Exception as e:
+                    print(f"Error adding root goal {goal['id']} to tree: {e}")
+                    
+            # Create progress bar widgets for all items
+            self.postProcessTreeItems()
+                    
+            # Reselect previously selected item if it exists
+            if selected_id:
+                self.selectGoalItemById(selected_id)
+            
+            # Expand all to show filtered results
+            self.goal_tree.expandAll()
+            
+        except Exception as e:
+            print(f"Error filtering goal tree: {e}")
+        finally:
+            # Unblock signals
+            self.goal_tree.blockSignals(False)
+            
+    def addFilteredSubGoals(self, goal, parent_item, filtered_goals, added_goal_ids, goal_progress):
+        """Add filtered subgoals to the tree."""
+        try:
+            # Add this goal as a child of parent_item
+            if goal['id'] not in added_goal_ids:
+                item = self.addGoalToTreeOptimized(goal, parent_item, goal_progress)
+                added_goal_ids.add(goal['id'])
+                
+                # Find all children for this goal that are in the filtered list
+                children = [g for g in filtered_goals if g['parent_id'] == goal['id']]
+                
+                # Add each child and its descendants
+                for child in children:
+                    self.addFilteredSubGoals(child, item, filtered_goals, added_goal_ids, goal_progress)
+        except Exception as e:
+            print(f"Error adding filtered subgoal {goal['id']}: {e}")
+            
+    def filterGoals(self, search_text, completion_filter, priority_filter):
+        """Filter goals based on search text, completion status, and priority."""
+        filtered_goals = []
+        
+        for goal in self.goals:
+            # Apply search filter
+            passes_search = True
+            if search_text:
+                # Search in title (could expand to search in description, etc.)
+                if search_text not in goal['title'].lower():
+                    passes_search = False
+                    
+            # Apply completion filter
+            passes_completion = True
+            if completion_filter is not None:
+                if goal['completed'] != completion_filter:
+                    passes_completion = False
+                    
+            # Apply priority filter
+            passes_priority = True
+            if priority_filter is not None:
+                if goal['priority'] != priority_filter:
+                    passes_priority = False
+                    
+            # Add to filtered list if passes all filters
+            if passes_search and passes_completion and passes_priority:
+                filtered_goals.append(goal)
+                
+        return filtered_goals
