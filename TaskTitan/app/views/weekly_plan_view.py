@@ -1261,24 +1261,36 @@ class WeeklyPlanView(QWidget):
                         )
                         completion_bar.setZValue(2)  # Above the activity rectangle
                     
-                    # Add activity title
+                    # Add activity title with better text handling
                     title_text = QGraphicsTextItem(activity.get('title', 'Untitled'))
-                    title_text.setTextWidth(actual_width - 30)
+                    title_text.setTextWidth(actual_width - 16)  # Leave some padding
+                    
+                    # Create HTML text with ellipsis for long titles
+                    title = activity.get('title', 'Untitled')
+                    if len(title) > 30 and height < 60:  # For small blocks
+                        title = title[:27] + "..."
+                    
+                    # Use HTML formatting for better text control
+                    html_text = f'<div style="max-width: {actual_width-16}px; word-wrap: break-word;">{title}</div>'
+                    title_text.setHtml(html_text)
+                    
                     title_text.setPos(actual_x + 8, y_pos + 5)
                     title_text.setDefaultTextColor(QColor("#FFFFFF"))
                     font = title_text.font()
                     font.setBold(True)
                     
-                    # Adjust font size based on available width
+                    # Adjust font size based on available space
                     if actual_width < 70:
-                        font.setPointSize(font.pointSize() - 1)
+                        font.setPointSize(8)  # Smaller font for narrow blocks
+                    elif actual_width < 100:
+                        font.setPointSize(9)
                     else:
-                        font.setPointSize(font.pointSize() + 1)
+                        font.setPointSize(10)
                         
                     title_text.setFont(font)
                     
                     # Add enhanced background for better text readability
-                    text_bg_height = min(30, height)
+                    text_bg_height = min(title_text.boundingRect().height() + 10, height)
                     text_bg = QGraphicsRectItem(actual_x, y_pos, actual_width, text_bg_height)
                     text_bg.setPen(QPen(Qt.PenStyle.NoPen))
                     
@@ -1292,12 +1304,16 @@ class WeeklyPlanView(QWidget):
                     title_text.setZValue(2)
                     self.scene.addItem(title_text)
                     
+                    # Adjust remaining content based on title height
+                    content_start_y = y_pos + text_bg_height + 2
+                    
                     # Add time text if enough space
-                    if height > 40 and actual_width > 60:
+                    remaining_height = y_pos + height - content_start_y
+                    if remaining_height > 20 and actual_width > 60:
                         time_format = "HH:mm" if actual_width > 70 else "HH"
                         time_text = QGraphicsTextItem(f"{start_time.toString(time_format)}-{end_time.toString(time_format)}")
                         time_text.setTextWidth(actual_width - 10)
-                        time_text.setPos(actual_x + 8, y_pos + 30)
+                        time_text.setPos(actual_x + 8, content_start_y)
                         time_text.setDefaultTextColor(QColor("#FFFFFF"))
                         
                         time_font = time_text.font()
@@ -1516,7 +1532,6 @@ class WeeklyPlanView(QWidget):
             elif 'day_index' in activity:
                 day_index = activity.get('day_index', 0)
                 activity_date = self.current_week_start.addDays(day_index)
-                activity['date'] = activity_date
             
             if not activity_date:
                 print("ERROR: Could not determine activity date - database update will fail")

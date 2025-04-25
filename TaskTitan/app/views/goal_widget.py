@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                            QGraphicsSceneWheelEvent, QGraphicsPathItem, QGraphicsEllipseItem,
                            QGraphicsDropShadowEffect, QProgressBar)
 from PyQt6.QtCore import Qt, QDate, QTime, pyqtSignal, QRectF, QPointF, QTimer, QEvent, QPoint
-from PyQt6.QtGui import QIcon, QFont, QColor, QPen, QBrush, QWheelEvent, QPainter, QPainterPath, QAction
+from PyQt6.QtGui import QIcon, QFont, QColor, QPen, QBrush, QWheelEvent, QPainter, QPainterPath, QAction, QFontMetrics
 from datetime import datetime, timedelta
 import random
 
@@ -144,7 +144,7 @@ class CustomGraphicsView(QGraphicsView):
                             break
                             
                     if goal:
-                        self.showGoalDetailsDialog(goal, event.globalPos())
+                        self.showGoalDetailsDialog(goal, event.globalPosition().toPoint())
                         return  # Don't pass to parent handler
         
         # Default handling for other cases
@@ -648,11 +648,12 @@ class GoalTimelineWidget(QWidget):
         
         # Draw the main axis
         days = (self.timeline_end - self.timeline_start).days
-        axis_width = days * 30  # 30 pixels per day
+        pixels_per_day = 50  # Increased from 30 to 50 pixels per day for better spacing
+        axis_width = days * pixels_per_day
         
         # Draw background grid
         for i in range(0, days + 1, 7):  # Weekly grid
-            x_pos = i * 30
+            x_pos = i * pixels_per_day
             # Vertical grid line
             grid_line = QGraphicsLineItem(x_pos, -50, x_pos, 1000)
             grid_line.setPen(QPen(QColor("#E5E7EB"), 1, Qt.PenStyle.DotLine))
@@ -677,7 +678,7 @@ class GoalTimelineWidget(QWidget):
         while current_date <= self.timeline_end:
             # Position based on days from start
             days_from_start = (current_date - self.timeline_start).days
-            x_pos = days_from_start * 30
+            x_pos = days_from_start * pixels_per_day
             
             # Draw tick
             tick = QGraphicsLineItem(x_pos, -5, x_pos, 5)
@@ -689,44 +690,28 @@ class GoalTimelineWidget(QWidget):
                 month_label = QGraphicsTextItem(current_date.strftime("%b %Y"))
                 month_label.setPos(x_pos - 20, -30)
                 month_label.setFont(QFont("Arial", 8, QFont.Weight.Bold))
-                month_label.setDefaultTextColor(QColor("#000000"))  # Set text color to black for better contrast
+                month_label.setDefaultTextColor(QColor("#000000"))
                 self.scene.addItem(month_label)
                 current_month = current_date.month
             
             # Add date label
-            if current_date.day == 1 or current_date.day % 5 == 0:
+            if current_date.day == 1 or current_date.day % 2 == 0:  # Show dates every 2 days
                 date_label = QGraphicsTextItem(current_date.strftime("%d"))
                 date_label.setPos(x_pos - 5, 10)
                 date_label.setFont(QFont("Arial", 8))
-                date_label.setDefaultTextColor(QColor("#000000"))  # Set text color to black for better contrast
+                date_label.setDefaultTextColor(QColor("#000000"))
                 self.scene.addItem(date_label)
             
             # Highlight weekends
             if current_date.weekday() >= 5:  # Saturday or Sunday
-                weekend_rect = QGraphicsRectItem(x_pos, -50, 30, 1000)
+                weekend_rect = QGraphicsRectItem(x_pos, -50, pixels_per_day, 1000)
                 weekend_rect.setPen(QPen(Qt.PenStyle.NoPen))
-                weekend_rect.setBrush(QBrush(QColor(240, 240, 240, 100)))  # Light gray with transparency
-                weekend_rect.setZValue(-1)  # Put it behind other items
+                weekend_rect.setBrush(QBrush(QColor(240, 240, 240, 100)))
+                weekend_rect.setZValue(-1)
                 self.scene.addItem(weekend_rect)
             
             # Move to next date
             current_date += timedelta(days=1)
-        
-        # Draw "today" indicator if within range
-        today = datetime.now().date()
-        if self.timeline_start <= today <= self.timeline_end:
-            days_from_start = (today - self.timeline_start).days
-            today_x = days_from_start * 30
-            
-            today_line = QGraphicsLineItem(today_x, -50, today_x, 1000)
-            today_line.setPen(QPen(QColor("#4F46E5"), 2, Qt.PenStyle.DashLine))
-            self.scene.addItem(today_line)
-            
-            today_label = QGraphicsTextItem("TODAY")
-            today_label.setPos(today_x - 20, -50)
-            today_label.setDefaultTextColor(QColor("#4F46E5"))
-            today_label.setFont(QFont("Arial", 8, QFont.Weight.Bold))
-            self.scene.addItem(today_label)
     
     def addGoalsToTimeline(self, goals):
         """Add goals to the timeline visualization."""
@@ -765,17 +750,19 @@ class GoalTimelineWidget(QWidget):
                 start_date = due_date - timedelta(days=7)
             
             # Calculate positions
+            pixels_per_day = 50  # Match the value used in drawTimeAxis
             start_days_from_timeline_start = max(0, (start_date - self.timeline_start).days)
             end_days_from_timeline_start = (due_date - self.timeline_start).days
             
-            x_start = start_days_from_timeline_start * 30
-            x_end = end_days_from_timeline_start * 30
-            width = max(120, x_end - x_start)  # Ensure minimum width
+            x_start = start_days_from_timeline_start * pixels_per_day
+            x_end = end_days_from_timeline_start * pixels_per_day
+            width = max(80, x_end - x_start)  # Minimum width of 80px for better text visibility
             
             # Apply indentation for subgoals based on level
             indent = level * 20
             if level > 0:
                 x_start += indent
+                width = min(width, x_end - x_start)  # Ensure width doesn't exceed due date
             
             # Create goal rectangle spanning from start to due date
             rect_height = 30
@@ -801,6 +788,34 @@ class GoalTimelineWidget(QWidget):
             # Store goal ID as item data for identification in click handler
             rect.setData(0, goal['id'])
             
+            # Add goal text with ellipsis if too long
+            text = QGraphicsTextItem()
+            text.setDefaultTextColor(QColor("#1F2937"))
+            
+            # Calculate available width for text (accounting for progress circle if needed)
+            text_width = width - 30 if not goal['completed'] and progress_percentage > 0 else width - 10
+            
+            # Create a font for the text
+            font = QFont()
+            font.setPointSize(8)
+            font.setBold(True)
+            text.setFont(font)
+            
+            # Elide text if it's too long
+            metrics = QFontMetrics(font)
+            elidedText = metrics.elidedText(goal['title'], Qt.TextElideMode.ElideRight, text_width)
+            text.setPlainText(elidedText)
+            
+            # Position text
+            text.setPos(x_start + 5, y_pos + 5)
+            
+            # Add white text outline for better contrast on any background
+            text_effect = QGraphicsDropShadowEffect()
+            text_effect.setColor(QColor("#FFFFFF"))
+            text_effect.setBlurRadius(0)
+            text_effect.setOffset(1, 1)
+            text.setGraphicsEffect(text_effect)
+            
             # Include progress percentage in the tooltip
             tooltip_html = f"""
             <div style='background-color:#FFFFFF; color:#000000; padding:8px; border:1px solid #D1D5DB; border-radius:4px; font-weight:bold;'>
@@ -810,6 +825,31 @@ class GoalTimelineWidget(QWidget):
             </div>
             """
             rect.setToolTip(tooltip_html)
+            
+            # Add special indicator for subgoals (small badge or marker)
+            if level > 0:
+                # Add a small triangular marker on the left to indicate it's a subgoal
+                marker_size = 10
+                path = QPainterPath()
+                path.moveTo(x_start - marker_size, y_pos + rect_height/2)
+                path.lineTo(x_start, y_pos + rect_height/2 - marker_size/2)
+                path.lineTo(x_start, y_pos + rect_height/2 + marker_size/2)
+                path.closeSubpath()
+                
+                # Create a marker with parent's color
+                parent_goal = next((g for g in all_goals if g['id'] == goal['parent_id']), None)
+                if parent_goal:
+                    if parent_goal['completed']:
+                        marker_color = QColor("#10B981")
+                    else:
+                        marker_color = QColor(colors[parent_goal['priority']])
+                else:
+                    marker_color = color
+                    
+                marker = QGraphicsPathItem(path)
+                marker.setPen(QPen(marker_color.darker(), 1))
+                marker.setBrush(QBrush(marker_color))
+                self.scene.addItem(marker)
             
             # Add a small circular progress indicator if not completed
             if not goal['completed'] and progress_percentage > 0:
@@ -848,60 +888,11 @@ class GoalTimelineWidget(QWidget):
                 progress_text = QGraphicsTextItem(f"{progress_percentage}%")
                 progress_text.setPos(circle_x - 5, circle_y + progress_diameter + 2)
                 progress_text.setFont(QFont("Arial", 7))
-                progress_text.setDefaultTextColor(QColor("#000000"))  # Set text color to black for better contrast
+                progress_text.setDefaultTextColor(QColor("#000000"))
                 
                 self.scene.addItem(progress_circle)
                 self.scene.addItem(progress_arc)
                 self.scene.addItem(progress_text)
-            
-            # Add special indicator for subgoals (small badge or marker)
-            if level > 0:
-                # Add a small triangular marker on the left to indicate it's a subgoal
-                marker_size = 10
-                path = QPainterPath()
-                path.moveTo(x_start - marker_size, y_pos + rect_height/2)
-                path.lineTo(x_start, y_pos + rect_height/2 - marker_size/2)
-                path.lineTo(x_start, y_pos + rect_height/2 + marker_size/2)
-                path.closeSubpath()
-                
-                # Create a marker with parent's color
-                parent_goal = next((g for g in all_goals if g['id'] == goal['parent_id']), None)
-                if parent_goal:
-                    if parent_goal['completed']:
-                        marker_color = QColor("#10B981")
-                    else:
-                        marker_color = QColor(colors[parent_goal['priority']])
-                else:
-                    marker_color = color
-                    
-                marker = QGraphicsPathItem(path)
-                marker.setPen(QPen(marker_color.darker(), 1))
-                marker.setBrush(QBrush(marker_color))
-                self.scene.addItem(marker)
-            
-            # Add goal text
-            text = QGraphicsTextItem(goal['title'])
-            text.setPos(x_start + 5, y_pos + 5)
-            text.setTextWidth(width - 30)  # Reduce text width to make room for progress circle
-            
-            # Use a smaller font for longer titles
-            font = QFont()
-            if len(goal['title']) > 15:
-                font.setPointSize(7)
-            else:
-                font.setPointSize(8)
-            font.setBold(True)  # Make text bold for better visibility
-            text.setFont(font)
-            
-            # Set text color to dark gray for better contrast
-            text.setDefaultTextColor(QColor("#1F2937"))  # Dark gray color for better readability
-            
-            # Add white text outline for better contrast on any background
-            text_effect = QGraphicsDropShadowEffect()
-            text_effect.setColor(QColor("#FFFFFF"))
-            text_effect.setBlurRadius(0)
-            text_effect.setOffset(1, 1)
-            text.setGraphicsEffect(text_effect)
             
             # Add to scene
             self.scene.addItem(rect)
