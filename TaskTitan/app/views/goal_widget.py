@@ -675,6 +675,40 @@ class GoalTimelineWidget(QWidget):
         month_label = None
         current_month = None
         
+        # Add today indicator
+        today = datetime.now().date()
+        if self.timeline_start <= today <= self.timeline_end:
+            days_from_start = (today - self.timeline_start).days
+            today_x = days_from_start * pixels_per_day
+            
+            # Add vertical line for today
+            today_line = QGraphicsLineItem(today_x, -40, today_x, 1000)
+            today_line.setPen(QPen(QColor("#4F46E5"), 1.5, Qt.PenStyle.DashLine))
+            today_line.setZValue(-1)  # Put it behind other elements
+            self.scene.addItem(today_line)
+            
+            # Add triangle marker at the top
+            marker_size = 10
+            marker_path = QPainterPath()
+            marker_path.moveTo(today_x - marker_size/2, -40)  # Left point
+            marker_path.lineTo(today_x + marker_size/2, -40)  # Right point
+            marker_path.lineTo(today_x, -30)  # Bottom point
+            marker_path.closeSubpath()
+            
+            marker = QGraphicsPathItem(marker_path)
+            marker.setPen(QPen(QColor("#4F46E5"), 1))
+            marker.setBrush(QBrush(QColor("#4F46E5")))
+            self.scene.addItem(marker)
+            
+            # Add "Today" label
+            today_label = QGraphicsTextItem("Today")
+            today_label.setDefaultTextColor(QColor("#4F46E5"))
+            today_label.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+            # Center the label above the marker
+            label_width = today_label.boundingRect().width()
+            today_label.setPos(today_x - label_width/2, -60)
+            self.scene.addItem(today_label)
+        
         while current_date <= self.timeline_end:
             # Position based on days from start
             days_from_start = (current_date - self.timeline_start).days
@@ -767,12 +801,14 @@ class GoalTimelineWidget(QWidget):
             # Create goal rectangle spanning from start to due date
             rect_height = 30
             
-            # Calculate progress percentage for this goal (get from parent widget if possible)
+            # Calculate progress percentage and time progress
             progress_percentage = 0
             if hasattr(self.parent, 'calculateGoalProgress'):
                 progress_percentage = self.parent.calculateGoalProgress(goal)
             elif goal['completed']:
                 progress_percentage = 100
+
+            time_progress = self.calculateTimeProgress(goal)
             
             # Choose color based on priority and completion
             if goal['completed']:
@@ -792,8 +828,8 @@ class GoalTimelineWidget(QWidget):
             text = QGraphicsTextItem()
             text.setDefaultTextColor(QColor("#1F2937"))
             
-            # Calculate available width for text (accounting for progress circle if needed)
-            text_width = width - 30 if not goal['completed'] and progress_percentage > 0 else width - 10
+            # Calculate available width for text (accounting for progress circles)
+            text_width = width - 60  # Account for both progress indicators
             
             # Create a font for the text
             font = QFont()
@@ -815,13 +851,14 @@ class GoalTimelineWidget(QWidget):
             text_effect.setBlurRadius(0)
             text_effect.setOffset(1, 1)
             text.setGraphicsEffect(text_effect)
-            
+
             # Include progress percentage in the tooltip
             tooltip_html = f"""
             <div style='background-color:#FFFFFF; color:#000000; padding:8px; border:1px solid #D1D5DB; border-radius:4px; font-weight:bold;'>
                 <span style='font-size:14px;'>{goal['title']}</span><br/>
                 <span style='font-size:12px;'>Due: {goal['due_date']} {goal['due_time']}</span><br/>
-                <span style='font-size:12px;'>Progress: {progress_percentage}%</span>
+                <span style='font-size:12px;'>Progress: {progress_percentage}%</span><br/>
+                <span style='font-size:12px;'>Time Elapsed: {time_progress}%</span>
             </div>
             """
             rect.setToolTip(tooltip_html)
@@ -851,48 +888,86 @@ class GoalTimelineWidget(QWidget):
                 marker.setBrush(QBrush(marker_color))
                 self.scene.addItem(marker)
             
-            # Add a small circular progress indicator if not completed
-            if not goal['completed'] and progress_percentage > 0:
-                # Draw a small circular progress indicator
-                progress_diameter = 20
-                circle_x = x_start + width - progress_diameter - 5
-                circle_y = y_pos + (rect_height - progress_diameter) / 2
+            # Add progress indicators if not completed
+            if not goal['completed']:
+                # Progress circle (completion progress)
+                if progress_percentage > 0:
+                    progress_diameter = 20
+                    circle_x = x_start + width - progress_diameter - 5
+                    circle_y = y_pos + (rect_height - progress_diameter) / 2
+                    
+                    # Create progress circle
+                    progress_circle = QGraphicsEllipseItem(circle_x, circle_y, progress_diameter, progress_diameter)
+                    progress_circle.setPen(QPen(Qt.PenStyle.NoPen))
+                    progress_circle.setBrush(QBrush(QColor("#FFFFFF")))
+                    
+                    # Add progress arc
+                    span_angle = int(360 * progress_percentage / 100) * 16
+                    
+                    path = QPainterPath()
+                    path.moveTo(circle_x + progress_diameter/2, circle_y + progress_diameter/2)
+                    path.arcTo(circle_x, circle_y, progress_diameter, progress_diameter, 90, -span_angle)
+                    path.closeSubpath()
+                    
+                    # Choose color based on progress
+                    if progress_percentage < 30:
+                        progress_color = QColor("#EF4444")
+                    elif progress_percentage < 70:
+                        progress_color = QColor("#F59E0B")
+                    else:
+                        progress_color = QColor("#10B981")
+                    
+                    progress_arc = QGraphicsPathItem(path)
+                    progress_arc.setPen(QPen(Qt.PenStyle.NoPen))
+                    progress_arc.setBrush(QBrush(progress_color))
+                    
+                    # Add percentage text
+                    progress_text = QGraphicsTextItem(f"{progress_percentage}%")
+                    progress_text.setPos(circle_x - 5, circle_y + progress_diameter + 2)
+                    progress_text.setFont(QFont("Arial", 7))
+                    progress_text.setDefaultTextColor(QColor("#000000"))
+                    
+                    self.scene.addItem(progress_circle)
+                    self.scene.addItem(progress_arc)
+                    self.scene.addItem(progress_text)
+
+                # Time progress circle
+                time_diameter = 20
+                time_circle_x = x_start + width - (2 * time_diameter) - 10
+                time_circle_y = y_pos + (rect_height - time_diameter) / 2
                 
-                # Create progress circle
-                progress_circle = QGraphicsEllipseItem(circle_x, circle_y, progress_diameter, progress_diameter)
-                progress_circle.setPen(QPen(Qt.PenStyle.NoPen))
-                progress_circle.setBrush(QBrush(QColor("#FFFFFF")))
+                # Create time progress circle
+                time_circle = QGraphicsEllipseItem(time_circle_x, time_circle_y, time_diameter, time_diameter)
+                time_circle.setPen(QPen(Qt.PenStyle.NoPen))
+                time_circle.setBrush(QBrush(QColor("#FFFFFF")))
                 
-                # Add progress arc
-                span_angle = int(360 * progress_percentage / 100) * 16  # Qt uses 16ths of a degree
+                # Add time progress arc
+                time_span_angle = int(360 * time_progress / 100) * 16
                 
-                # Create a path for the progress arc
-                path = QPainterPath()
-                path.moveTo(circle_x + progress_diameter/2, circle_y + progress_diameter/2)
-                path.arcTo(circle_x, circle_y, progress_diameter, progress_diameter, 90, -span_angle)
-                path.closeSubpath()
+                time_path = QPainterPath()
+                time_path.moveTo(time_circle_x + time_diameter/2, time_circle_y + time_diameter/2)
+                time_path.arcTo(time_circle_x, time_circle_y, time_diameter, time_diameter, 90, -time_span_angle)
+                time_path.closeSubpath()
                 
-                # Choose color based on progress
-                if progress_percentage < 30:
-                    progress_color = QColor("#EF4444")  # Red for low progress
-                elif progress_percentage < 70:
-                    progress_color = QColor("#F59E0B")  # Orange/Yellow for medium progress
+                # Choose color based on time progress vs completion progress
+                if time_progress > progress_percentage + 20:
+                    time_color = QColor("#EF4444")  # Red if time progress is significantly ahead of completion
                 else:
-                    progress_color = QColor("#10B981")  # Green for high progress
+                    time_color = QColor("#6B7280")  # Gray for normal time progress
                 
-                progress_arc = QGraphicsPathItem(path)
-                progress_arc.setPen(QPen(Qt.PenStyle.NoPen))
-                progress_arc.setBrush(QBrush(progress_color))
+                time_arc = QGraphicsPathItem(time_path)
+                time_arc.setPen(QPen(Qt.PenStyle.NoPen))
+                time_arc.setBrush(QBrush(time_color))
                 
-                # Add percentage text
-                progress_text = QGraphicsTextItem(f"{progress_percentage}%")
-                progress_text.setPos(circle_x - 5, circle_y + progress_diameter + 2)
-                progress_text.setFont(QFont("Arial", 7))
-                progress_text.setDefaultTextColor(QColor("#000000"))
+                # Add time percentage text
+                time_text = QGraphicsTextItem(f"T:{time_progress}%")
+                time_text.setPos(time_circle_x - 5, time_circle_y + time_diameter + 2)
+                time_text.setFont(QFont("Arial", 7))
+                time_text.setDefaultTextColor(QColor("#000000"))
                 
-                self.scene.addItem(progress_circle)
-                self.scene.addItem(progress_arc)
-                self.scene.addItem(progress_text)
+                self.scene.addItem(time_circle)
+                self.scene.addItem(time_arc)
+                self.scene.addItem(time_text)
             
             # Add to scene
             self.scene.addItem(rect)
@@ -1021,6 +1096,47 @@ class GoalTimelineWidget(QWidget):
             total_height += sub_height + 20  # Add spacing between subgoals
             
         return total_height
+
+    def calculateTimeProgress(self, goal):
+        """Calculate progress based on time elapsed.
+        
+        Args:
+            goal: The goal to calculate time progress for
+            
+        Returns:
+            int: Time progress percentage (0-100)
+        """
+        try:
+            # Get the start and due dates
+            if 'created_date' in goal and goal['created_date']:
+                start_date = datetime.strptime(goal['created_date'], "%Y-%m-%d").date()
+            else:
+                # Default to 2 weeks before due date
+                due_date = datetime.strptime(goal['due_date'], "%Y-%m-%d").date()
+                start_date = due_date - timedelta(days=14)
+            
+            due_date = datetime.strptime(goal['due_date'], "%Y-%m-%d").date()
+            today = datetime.now().date()
+            
+            # Calculate total duration and elapsed duration
+            total_days = (due_date - start_date).days
+            if total_days <= 0:  # Guard against invalid dates
+                return 0
+                
+            elapsed_days = (today - start_date).days
+            
+            # Calculate progress percentage
+            if elapsed_days < 0:  # Goal hasn't started yet
+                progress = 0
+            elif elapsed_days >= total_days:  # Goal is overdue
+                progress = 100
+            else:
+                progress = (elapsed_days / total_days) * 100
+                
+            return int(progress)
+        except (ValueError, TypeError):
+            # Return 0 if there are date parsing errors
+            return 0
 
 class GoalWidget(QWidget):
     """Widget for managing goals and tracking progress."""
@@ -1542,7 +1658,7 @@ class GoalWidget(QWidget):
         return item
     
     def calculateGoalProgress(self, goal):
-        """Calculate the progress percentage for a goal based on subgoals and time.
+        """Calculate the progress percentage for a goal based only on subgoals completion.
         
         Args:
             goal: The goal to calculate progress for
@@ -1557,92 +1673,16 @@ class GoalWidget(QWidget):
         # Find all subgoals for this goal
         subgoals = [g for g in self.goals if g['parent_id'] == goal['id']]
         
-        # If there are no subgoals, calculate progress based on time
+        # If there are no subgoals, return 0 unless completed
         if not subgoals:
-            return self.calculateTimeBasedProgress(goal)
-        
-        # If there are subgoals, calculate based on subgoal completion and weighted by duration
-        total_duration = 0
-        completed_duration = 0
-        
-        for subgoal in subgoals:
-            try:
-                # Get the start and end dates for duration calculation
-                if 'created_date' in subgoal and subgoal['created_date']:
-                    start_date = datetime.strptime(subgoal['created_date'], "%Y-%m-%d").date()
-                else:
-                    due_date = datetime.strptime(subgoal['due_date'], "%Y-%m-%d").date()
-                    start_date = due_date - timedelta(days=7)  # Default 1 week duration if no start date
-                
-                due_date = datetime.strptime(subgoal['due_date'], "%Y-%m-%d").date()
-                
-                # Calculate duration in days (minimum 1 day)
-                duration = max(1, (due_date - start_date).days)
-                
-                # Add to total duration
-                total_duration += duration
-                
-                # If completed, add to completed duration
-                if subgoal['completed']:
-                    completed_duration += duration
-                else:
-                    # For incomplete subgoals that have their own subgoals, 
-                    # calculate their progress recursively
-                    subgoal_progress = self.calculateGoalProgress(subgoal) / 100.0
-                    completed_duration += duration * subgoal_progress
-            except (ValueError, TypeError, KeyError):
-                # Skip if there are issues with the dates
-                continue
-        
-        # Calculate progress based on weighted subgoal completion
-        if total_duration > 0:
-            progress = (completed_duration / total_duration) * 100
-        else:
-            progress = 0
-            
-        return int(progress)
-    
-    def calculateTimeBasedProgress(self, goal):
-        """Calculate progress based on time elapsed.
-        
-        Args:
-            goal: The goal to calculate progress for
-            
-        Returns:
-            int: Progress percentage (0-100)
-        """
-        try:
-            # Get the start and due dates
-            if 'created_date' in goal and goal['created_date']:
-                start_date = datetime.strptime(goal['created_date'], "%Y-%m-%d").date()
-            else:
-                # Default to 2 weeks before due date
-                due_date = datetime.strptime(goal['due_date'], "%Y-%m-%d").date()
-                start_date = due_date - timedelta(days=14)
-            
-            due_date = datetime.strptime(goal['due_date'], "%Y-%m-%d").date()
-            today = datetime.now().date()
-            
-            # Calculate total duration and elapsed duration
-            total_days = (due_date - start_date).days
-            if total_days <= 0:  # Guard against invalid dates
-                return 0
-                
-            elapsed_days = (today - start_date).days
-            
-            # Calculate progress percentage
-            if elapsed_days < 0:  # Goal hasn't started yet
-                progress = 0
-            elif elapsed_days >= total_days:  # Goal is overdue
-                progress = 90  # Almost complete but not 100% until actually marked complete
-            else:
-                progress = (elapsed_days / total_days) * 100
-                
-            return int(progress)
-        except (ValueError, TypeError):
-            # Return 0 if there are date parsing errors
             return 0
-    
+        
+        # Calculate based on number of completed subgoals
+        completed_subgoals = len([g for g in subgoals if g['completed']])
+        total_subgoals = len(subgoals)
+        
+        return int((completed_subgoals / total_subgoals) * 100)
+
     def handleItemStatusChanged(self, item, column):
         """Handle when a goal's status is changed."""
         if column == 4:  # Status column
