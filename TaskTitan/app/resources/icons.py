@@ -5,10 +5,16 @@ This module provides functions to access and load icons used throughout the appl
 """
 
 import os
+import sys
 from PyQt6.QtGui import QIcon, QPixmap
 
-# The resources directory
-RESOURCES_DIR = os.path.dirname(os.path.abspath(__file__))
+# The resources directory - Handle PyInstaller's frozen state
+if getattr(sys, 'frozen', False):
+    # Running as PyInstaller executable
+    RESOURCES_DIR = os.path.join(sys._MEIPASS, 'app', 'resources')
+else:
+    # Running as script
+    RESOURCES_DIR = os.path.dirname(os.path.abspath(__file__))
 ICONS_DIR = os.path.join(RESOURCES_DIR, 'icons')
 
 # Dictionary to cache loaded icons

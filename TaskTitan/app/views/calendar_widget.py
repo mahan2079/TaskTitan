@@ -12,7 +12,7 @@ from app.views.unified_activities_widget import ActivityAddEditDialog
 
 # Corrected Persian Date Conversion
 class PersianDate:
-    """Utility class for correct Gregorian to Persian date conversion."""
+    """Utility class for correct Gregorian to Persian date conversion using the official Iranian calendar algorithm."""
     
     @staticmethod
     def gregorian_to_persian(date):
@@ -21,60 +21,108 @@ class PersianDate:
         month = date.month()
         day = date.day()
         
-        # Convert Gregorian to Julian Day Number
+        # Convert Gregorian to Julian Day Number using correct algorithm
+        # Using the standard algorithm (more accurate formula)
         a = math.floor((14 - month) / 12)
         y = year + 4800 - a
         m = month + 12 * a - 3
-        jdn = day + math.floor((153 * m + 2) / 5) + 365 * y + math.floor(y / 4) - math.floor(y / 100) + math.floor(y / 400) - 32045
+        
+        # Julian Day Number (at noon for the given date)
+        # This formula returns JDN at noon (add 0.5 for noon)
+        jdn_noon = day + math.floor((153 * m + 2) / 5) + 365 * y + math.floor(y / 4) - math.floor(y / 100) + math.floor(y / 400) - 32045 + 0.5
         
         # Convert Julian Day Number to Persian
-        jdn = jdn - 1948320.5  # Subtract Persian epoch
+        # Persian epoch: 1948320.5 (March 22, 622 AD = 1 Farvardin 1 AP at noon)
+        jdn_persian = jdn_noon - 1948320.5
         
-        # Calculate Persian year
-        p_year = math.floor((jdn + 0.5) / 365.2421986)
-        p_year = p_year + 1  # Add 1 to get the correct year
+        # Find the Persian year using iterative approach
+        # Start with an estimate and refine
+        p_year = math.floor((jdn_persian + 0.5) / 365.24219858156) + 1
+        
+        # Refine the year by checking actual JDN for year start
+        jdn_year_start = PersianDate._persian_to_jdn(p_year, 1, 1)
+        
+        # Adjust year if needed
+        while jdn_noon < jdn_year_start:
+            p_year -= 1
+            jdn_year_start = PersianDate._persian_to_jdn(p_year, 1, 1)
+        
+        jdn_next_year_start = PersianDate._persian_to_jdn(p_year + 1, 1, 1)
+        if jdn_noon >= jdn_next_year_start:
+            p_year += 1
+            jdn_year_start = jdn_next_year_start
+        
+        # Calculate days since start of Persian year
+        days_since_year_start = jdn_noon - jdn_year_start
         
         # Calculate Persian month and day
-        p_month = 1
-        p_day = 1
+        # Use floor to get the integer number of full days elapsed (0-indexed)
+        # Add a small epsilon to handle floating point precision issues
+        days_in_year = int(math.floor(days_since_year_start + 1e-10))
         
-        # Calculate the number of days since the start of the Persian year
-        days_in_year = jdn - PersianDate._persian_to_jdn(p_year, 1, 1)
+        # Persian calendar structure:
+        # Months 1-6: 31 days each = 186 days total
+        # Months 7-11: 30 days each = 150 days total  
+        # Month 12: 29 or 30 days (leap year)
         
-        # Adjust for the one-day offset
-        days_in_year = days_in_year + 1
-        
-        # Determine the Persian month
         if days_in_year < 186:
-            p_month = math.floor(days_in_year / 31) + 1
-            p_day = days_in_year % 31 + 1
+            # First 6 months (31 days each)
+            p_month = (days_in_year // 31) + 1
+            p_day = (days_in_year % 31) + 1
+        elif days_in_year < 336:
+            # Months 7-11 (30 days each)
+            days_remaining = days_in_year - 186
+            p_month = (days_remaining // 30) + 7
+            p_day = (days_remaining % 30) + 1
         else:
-            days_in_year = days_in_year - 186
-            p_month = math.floor(days_in_year / 30) + 7
-            p_day = days_in_year % 30 + 1
+            # Month 12 (Esfand) - 29 or 30 days depending on leap year
+            days_remaining = days_in_year - 336
+            p_month = 12
+            max_day = 30 if PersianDate._is_leap_year(p_year) else 29
+            p_day = days_remaining + 1
+            if p_day > max_day:
+                p_day = max_day
         
         return (p_year, p_month, p_day)
     
     @staticmethod
     def _persian_to_jdn(year, month, day):
         """Convert Persian date to Julian Day Number."""
-        # Calculate the number of days since the Persian epoch
-        days = (year - 1) * 365
-        days += math.floor((year - 1) / 4)
-        days -= math.floor((year - 1) / 100)
-        days += math.floor((year - 1) / 400)
+        # Calculate days since Persian epoch (1 Farvardin 1 AP)
+        # Use the correct Persian calendar leap year calculation
+        base_days = (year - 1) * 365
+        
+        # Add leap year days using Persian calendar 33-year cycle
+        # Leap years occur in years where (year % 33) is in [1, 5, 9, 13, 17, 22, 26, 30]
+        cycles = math.floor((year - 1) / 33)
+        leap_years_in_cycles = cycles * 8  # 8 leap years per 33-year cycle
+        
+        # Calculate leap years in the partial cycle
+        remainder = (year - 1) % 33
+        leap_years_in_partial = sum(1 for y in range(1, remainder + 1) if y % 33 in [1, 5, 9, 13, 17, 22, 26, 30])
+        
+        base_days += leap_years_in_cycles + leap_years_in_partial
         
         # Add days for months
-        if month <= 7:
-            days += (month - 1) * 31
+        if month <= 6:
+            # First 6 months: 31 days each
+            base_days += (month - 1) * 31
         else:
-            days += 186 + (month - 7) * 30
+            # Months 7-11: 30 days each
+            base_days += 186 + (month - 7) * 30
         
-        # Add days
-        days += day
+        # Add the day (subtract 1 because we're counting from day 1)
+        base_days += day - 1
         
         # Add Persian epoch
-        return days + 1948320.5
+        return base_days + 1948320.5
+    
+    @staticmethod
+    def _is_leap_year(year):
+        """Check if a Persian year is a leap year."""
+        # Persian leap year rule: (year % 33) in [1, 5, 9, 13, 17, 22, 26, 30]
+        remainder = year % 33
+        return remainder in [1, 5, 9, 13, 17, 22, 26, 30]
     
     @staticmethod
     def get_persian_month_name(month):
@@ -127,29 +175,8 @@ class EventDialog(QDialog):
         
         self.event_date = event_date or QDate.currentDate()
         
-        # Create a more modern layout
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #FFFFFF;
-            }
-            QLabel {
-                color: #1E293B;
-                font-size: 14px;
-            }
-            QLineEdit, QTimeEdit, QComboBox {
-                border: 1px solid #CBD5E1;
-                border-radius: 8px;
-                padding: 10px;
-                background-color: #F8FAFC;
-                color: #334155;
-                font-size: 14px;
-                selection-background-color: #DBEAFE;
-            }
-            QLineEdit:focus, QTimeEdit:focus, QComboBox:focus {
-                border-color: #93C5FD;
-                background-color: white;
-            }
-        """)
+        # Remove hardcoded stylesheet - let theme system handle styling
+        # The theme system already provides QDialog styling
         
         # Main layout with padding
         main_layout = QVBoxLayout(self)
@@ -210,11 +237,8 @@ class EventDialog(QDialog):
         # Add color preview box
         self.color_preview = QFrame()
         self.color_preview.setFixedSize(40, 40)
-        self.color_preview.setStyleSheet(f"""
-            background-color: {self.current_color.name()};
-            border-radius: 8px;
-            border: 1px solid #CBD5E1;
-        """)
+        # Theme system will handle border styling
+        self.update_color_preview()
         
         color_layout.addWidget(self.color_preview)
         color_layout.addWidget(self.color_btn)
@@ -226,13 +250,8 @@ class EventDialog(QDialog):
         date_label.setStyleSheet("font-weight: bold;")
         
         self.date_display = QLabel(self.event_date.toString("dddd, MMMM d, yyyy"))
-        self.date_display.setStyleSheet("""
-            font-weight: bold;
-            color: #4F46E5;
-            background-color: #EEF2FF;
-            padding: 10px;
-            border-radius: 8px;
-        """)
+        # Theme system will handle label styling
+        self.date_display.setMinimumHeight(40)
         
         form_layout.addRow(date_label, self.date_display)
         
@@ -252,46 +271,15 @@ class EventDialog(QDialog):
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setMinimumHeight(45)
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #F1F5F9;
-                color: #475569;
-                border: none;
-                border-radius: 8px;
-                padding: 12px 25px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #E2E8F0;
-            }
-            QPushButton:pressed {
-                background-color: #CBD5E1;
-            }
-        """)
+        # Theme system will handle button styling
         self.cancel_btn.clicked.connect(self.reject)
         
         # Save button with gradient
         self.save_btn = QPushButton("Save Event")
         self.save_btn.setMinimumHeight(45)
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.save_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6366F1, stop:1 #8B5CF6);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 12px 25px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED);
-            }
-            QPushButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9);
-            }
-        """)
+        self.save_btn.setObjectName("primaryBtn")
+        # Theme system will handle button styling
         self.save_btn.clicked.connect(self.accept)
         
         # Add buttons to layout
@@ -303,33 +291,45 @@ class EventDialog(QDialog):
         # Set title as initial focus
         self.title_edit.setFocus()
     
+    def update_color_preview(self):
+        """Update color preview box with selected color."""
+        from app.themes import ThemeManager
+        border_color = ThemeManager.get_color("border")
+        self.color_preview.setStyleSheet(f"""
+            background-color: {self.current_color.name()};
+            border-radius: 8px;
+            border: 1px solid {border_color};
+        """)
+    
     def select_color(self):
         """Open color dialog to select event color."""
         color = QColorDialog.getColor(self.current_color, self, "Select Event Color")
         if color.isValid():
             self.current_color = color
             self.update_color_button()
-            # Update the color preview as well
-            self.color_preview.setStyleSheet(f"""
-                background-color: {self.current_color.name()};
-                border-radius: 8px;
-                border: 1px solid #CBD5E1;
-            """)
+            self.update_color_preview()
     
     def update_color_button(self):
         """Update color button appearance with selected color."""
+        from app.themes import ThemeManager
+        bg = ThemeManager.get_color("surface")
+        border = ThemeManager.get_color("border")
+        text = ThemeManager.get_color("text")
+        hover_bg = ThemeManager.get_color("surface2")
+        primary = ThemeManager.get_color("primary")
+        
         self.color_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: white;
-                border: 1px solid #CBD5E1;
+                background-color: {bg};
+                border: 1px solid {border};
                 border-radius: 8px;
                 font-weight: bold;
-                color: #334155;
+                color: {text};
                 text-align: center;
             }}
             QPushButton:hover {{
-                background-color: #F8FAFC;
-                border-color: #93C5FD;
+                background-color: {hover_bg};
+                border-color: {primary};
             }}
         """)
         self.color_btn.setText("Choose Color")
@@ -918,11 +918,11 @@ class CalendarWithEventList(QWidget):
         try:
             # Clear existing events first
             self.calendar.events = {}
-            
-            # Get activities from the UnifiedActivitiesView
-            activities_view = self.main_window.activitiesView
-            
-            if not hasattr(activities_view, 'activities'):
+
+            # Get activities from the UnifiedActivitiesWidget
+            activities_view = getattr(self.main_window, 'activities_view', None)
+
+            if not activities_view or not hasattr(activities_view, 'activities'):
                 print("No activities found in the main system")
                 return
                 
@@ -962,7 +962,7 @@ class CalendarWithEventList(QWidget):
             
             # Update the calendar display
             self.calendar.updateCells()
-            
+
         except Exception as e:
             print(f"Error syncing with activities manager: {e}")
             

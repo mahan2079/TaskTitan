@@ -1,0 +1,156 @@
+"""
+Code quality configuration files for TaskTitan.
+
+This module provides configuration for linting, formatting,
+and type checking tools.
+"""
+
+# .flake8 configuration
+FLAKE8_CONFIG = """
+[flake8]
+max-line-length = 100
+exclude = 
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    build,
+    dist,
+    *.egg-info,
+    tests,
+    .pytest_cache,
+    .mypy_cache
+ignore = 
+    E203,  # whitespace before ':'
+    E501,  # line too long (handled by black)
+    W503,  # line break before binary operator
+per-file-ignores =
+    __init__.py:F401
+"""
+
+# mypy.ini configuration
+MYPY_CONFIG = """
+[mypy]
+python_version = 3.8
+warn_return_any = True
+warn_unused_configs = True
+disallow_untyped_defs = False
+disallow_incomplete_defs = False
+check_untyped_defs = True
+no_implicit_optional = True
+warn_redundant_casts = True
+warn_unused_ignores = True
+warn_no_return = True
+warn_unreachable = True
+strict_equality = True
+
+[mypy-PyQt6.*]
+ignore_missing_imports = True
+
+[mypy-qasync.*]
+ignore_missing_imports = True
+
+[mypy-pyqtgraph.*]
+ignore_missing_imports = True
+
+[mypy-darkdetect.*]
+ignore_missing_imports = True
+"""
+
+# .isort.cfg configuration
+ISORT_CONFIG = """
+[settings]
+profile = black
+line_length = 100
+skip = __init__.py, migrations, venv, .venv
+known_first_party = app
+"""
+
+# Pre-commit hooks configuration
+PRE_COMMIT_CONFIG = """
+repos:
+  - repo: https://github.com/psf/black
+    rev: 23.12.0
+    hooks:
+      - id: black
+        language_version: python3
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.1.0
+    hooks:
+      - id: flake8
+        args: [--max-line-length=100, --extend-ignore=E203,W503]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.7.0
+    hooks:
+      - id: mypy
+        args: [--ignore-missing-imports]
+        additional_dependencies: [types-all]
+"""
+
+# pyproject.toml for Black
+PYPROJECT_TOML = """
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \\.eggs
+  | \\.git
+  | \\.hg
+  | \\.mypy_cache
+  | \\.tox
+  | \\.venv
+  | venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip = ["__init__.py", "migrations", "venv", ".venv"]
+known_first_party = ["app"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "PyQt6.*",
+    "qasync.*",
+    "pyqtgraph.*",
+    "darkdetect.*"
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=app --cov-report=html --cov-report=term-missing"
+"""
+

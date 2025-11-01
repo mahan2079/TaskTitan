@@ -11,11 +11,9 @@ def calculate_weeks_since_birth(birth_date):
 
 def validate_time(time_str):
     """Validate a time string in HH:MM format."""
-    try:
-        datetime.strptime(time_str, "%H:%M")
-        return True
-    except ValueError:
-        return False
+    from app.utils.validators import validate_time_string
+    is_valid, _ = validate_time_string(time_str)
+    return is_valid
 
 def load_colors(config_path="colors_config.json"):
     """Load color configuration from a JSON file."""

@@ -16,6 +16,7 @@ import random
 
 from app.resources import get_icon
 from app.models.activities_manager import ActivitiesManager
+from app.models.template_manager import TemplateManager
 
 class ActivityItemWidget(QWidget):
     """A unified widget for displaying activities (events, tasks, habits)."""
@@ -112,15 +113,12 @@ class ActivityItemWidget(QWidget):
         self.color_bar = QFrame()
         self.color_bar.setFixedWidth(4)  # Thin color bar
         
-        # Set color based on activity type or custom color
+        # Theme-driven color: expose type as property; allow custom color inline only for user color
         if self.custom_color:
             self.color_bar.setStyleSheet(f"background-color: {self.custom_color}; border-radius: 2px;")
-        elif self.activity_type == 'task':
-            self.color_bar.setStyleSheet("background-color: #F87171; border-radius: 2px;")
-        elif self.activity_type == 'event':
-            self.color_bar.setStyleSheet("background-color: #818CF8; border-radius: 2px;")
-        elif self.activity_type == 'habit':
-            self.color_bar.setStyleSheet("background-color: #34D399; border-radius: 2px;")
+        else:
+            self.color_bar.setProperty("data-activity-type", self.activity_type)
+            self.color_bar.setStyleSheet("")
         
         self.main_layout.addWidget(self.color_bar)
         
@@ -176,7 +174,8 @@ class ActivityItemWidget(QWidget):
         font = QFont()
         font.setPointSize(12)  # Smaller font
         if self.completed:
-            self.title_label.setStyleSheet("text-decoration: line-through; color: #6B7280; font-size: 12pt;")
+            # Theme system will handle completed task styling
+            self.title_label.setStyleSheet("text-decoration: line-through; font-size: 12pt;")
         else:
             font.setBold(True)
             self.title_label.setFont(font)
@@ -199,14 +198,16 @@ class ActivityItemWidget(QWidget):
         details_text += f"• {self.activity_type.capitalize()}"
             
         self.details_label.setText(details_text)
-        self.details_label.setStyleSheet("color: #6B7280; font-size: 10pt;")  # Smaller font
+        # Theme system will handle muted text styling
+        self.details_label.setStyleSheet("font-size: 10pt;")  # Smaller font
         self.details_label.setMaximumHeight(20)  # Fixed smaller height
         self.text_container.addWidget(self.details_label)
         
         # Add description label (additional info) - with much shorter text
         description_label = QLabel("This is a larger activity item with additional details.")
         description_label.setWordWrap(True)
-        description_label.setStyleSheet("color: #4B5563; font-size: 10pt;")  # Smaller font
+        # Theme system will handle muted text styling
+        description_label.setStyleSheet("font-size: 10pt;")  # Smaller font
         description_label.setMaximumHeight(30)  # Fixed smaller height
         self.text_container.addWidget(description_label)
         
@@ -246,20 +247,8 @@ class ActivityItemWidget(QWidget):
             self.actions_btn.setText("...")
         self.actions_btn.setFixedSize(24, 24)  # Smaller button
         self.actions_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.actions_btn.setStyleSheet("""
-            QPushButton {
-                border: none;
-                background-color: transparent;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #F3F4F6;
-                border-radius: 12px;
-            }
-            QPushButton:pressed {
-                background-color: #E5E7EB;
-            }
-        """)
+        # Let the global theme style this button
+        self.actions_btn.setStyleSheet("")
         
         self.actions_btn.clicked.connect(self.showActionsMenu)
         self.main_layout.addWidget(self.actions_btn)
@@ -268,55 +257,29 @@ class ActivityItemWidget(QWidget):
         self.updateStyle()
     
     def updateStyle(self):
-        """Update the styling of the widget based on completion state."""
-        if self.completed:
-            self.setStyleSheet("""
-                #activityWidget {
-                    background-color: #F9FAFB;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 8px;
-                }
-                #activityTitle {
-                    text-decoration: line-through;
-                    color: #6B7280;
-                    font-size: 12pt;
-                    padding: 2px 0;
-                }
-            """)
-        else:
-            self.setStyleSheet("""
-                #activityWidget {
-                    background-color: #FFFFFF;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 8px;
-                }
-                #activityTitle {
-                    color: #1F2937;
-                    font-size: 12pt;
-                    padding: 2px 0;
-                    font-weight: bold;
-                }
-                #activityWidget:hover {
-                    border: 1px solid #D1D5DB;
-                    background-color: #F9FAFB;
-                }
-            """)
+        """Update theming via properties (no inline styles)."""
+        # Mark as a theme card so global QSS applies
+        try:
+            self.setProperty("data-card", "true")
+            self.setProperty("data-activity", "true")
+            self.setProperty("data-completed", "true" if self.completed else "false")
+            # Re-polish to apply theme changes
+            self.style().unpolish(self)
+            self.style().polish(self)
+        except Exception:
+            pass
     
     def onCompletionToggled(self, checked):
         """Handle activity completion toggling."""
         self.completed = checked
         
-        # Update title appearance
-        if checked:
-            self.title_label.setStyleSheet("text-decoration: line-through; color: #6B7280; font-size: 12pt;")
-            font = self.title_label.font()
-            font.setBold(False)
-            self.title_label.setFont(font)
-        else:
-            self.title_label.setStyleSheet("color: #1F2937; font-size: 12pt; font-weight: bold;")
-            font = self.title_label.font()
-            font.setBold(True)
-            self.title_label.setFont(font)
+        # Update title appearance without inline styles
+        font = self.title_label.font()
+        font.setBold(not checked)
+        font.setStrikeOut(checked)
+        self.title_label.setFont(font)
+        # Clear any previous inline stylesheet if present
+        self.title_label.setStyleSheet("")
         
         # Update widget style
         self.updateStyle()
@@ -390,9 +353,18 @@ class ActivityItemWidget(QWidget):
         
         menu.addSeparator()
         
+        # Edit for today only action (for habits)
+        edit_today_action = None
         # Delete for today only action (for habits)
         delete_today_action = None
         if self.activity_type == 'habit':
+            edit_today_action = menu.addAction(f"Edit for Today Only")
+            edit_today_icon = get_icon("edit")
+            if not edit_today_icon.isNull():
+                edit_today_action.setIcon(edit_today_icon)
+            else:
+                edit_today_action.setIcon(QIcon.fromTheme("document-edit"))
+                
             delete_today_action = menu.addAction(f"Delete for Today Only")
             delete_today_icon = get_icon("delete-today")
             if not delete_today_icon.isNull():
@@ -462,6 +434,9 @@ class ActivityItemWidget(QWidget):
             # Signal to reschedule - use the activityEdited signal for now
             # The parent will need to handle this specially
             self.activityEdited.emit(self.activity_id, f"reschedule_{self.activity_type}")
+        elif action == edit_today_action:
+            # Signal to edit this habit for today only
+            self.activityEdited.emit(self.activity_id, "edit_today_habit")
         elif action == delete_today_action:
             # Signal to delete this habit for today only
             self.activityEdited.emit(self.activity_id, "delete_today_habit")
@@ -766,6 +741,243 @@ class ActivityAddEditDialog(QDialog):
         return data
 
 
+class OverlapConflictDialog(QDialog):
+    """Dialog for handling activity overlap conflicts."""
+    
+    def __init__(self, conflicts, date, start_time, end_time, parent=None):
+        super().__init__(parent)
+        self.conflicts = conflicts
+        self.selected_action = None
+        self.new_time = None
+        self.activity_to_reschedule = None
+        
+        self.setWindowTitle("Scheduling Conflict Detected")
+        self.setMinimumWidth(500)
+        self.setupUI(date, start_time, end_time)
+    
+    def setupUI(self, date, start_time, end_time):
+        """Set up the UI for the conflict dialog."""
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Warning header
+        header = QLabel("⚠️ Scheduling Conflict")
+        # Theme system will handle label styling
+        header.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(header)
+        
+        # Message
+        message = QLabel(
+            f"The scheduled time ({start_time.toString('HH:mm')} - {end_time.toString('HH:mm')}) "
+            f"overlaps with {len(self.conflicts)} existing activity(ies)."
+        )
+        message.setWordWrap(True)
+        # Theme system will handle label styling
+        message.setStyleSheet("margin-bottom: 15px;")
+        layout.addWidget(message)
+        
+        # Conflicting activities list
+        conflicts_label = QLabel("Conflicting Activities:")
+        # Theme system will handle label styling
+        conflicts_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        layout.addWidget(conflicts_label)
+        
+        # Create scroll area for conflicts
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setMaximumHeight(150)
+        # Theme system will handle scroll area styling
+        
+        conflicts_widget = QWidget()
+        conflicts_layout = QVBoxLayout(conflicts_widget)
+        
+        for conflict in self.conflicts:
+            conflict_frame = QFrame()
+            from app.themes import ThemeManager
+            error_bg = ThemeManager.get_color("error_bg")
+            error = ThemeManager.get_color("error")
+            conflict_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {error_bg};
+                    border: 1px solid {error};
+                    border-radius: 6px;
+                    padding: 8px;
+                    margin: 2px;
+                }}
+            """)
+            
+            conflict_layout = QHBoxLayout(conflict_frame)
+            
+            # Icon based on type
+            icon = "📅" if conflict['type'] == 'event' else "✓" if conflict['type'] == 'task' else "🔄"
+            icon_label = QLabel(icon)
+            icon_label.setStyleSheet("font-size: 16px;")
+            conflict_layout.addWidget(icon_label)
+            
+            # Activity info
+            info_label = QLabel(
+                f"<b>{conflict['title']}</b><br>"
+                f"{conflict['start_time']} - {conflict['end_time']}<br>"
+                f"Type: {conflict['type']}"
+            )
+            # Theme system will handle label styling
+            conflict_layout.addWidget(info_label)
+            
+            conflict_layout.addStretch()
+            conflicts_layout.addWidget(conflict_frame)
+        
+        conflicts_layout.addStretch()
+        scroll.setWidget(conflicts_widget)
+        layout.addWidget(scroll)
+        
+        # Action buttons
+        button_layout = QHBoxLayout()
+        
+        # Reschedule new activity button
+        reschedule_btn = QPushButton("Reschedule New Activity")
+        reschedule_btn.setObjectName("primaryBtn")
+        # Theme system will handle button styling
+        reschedule_btn.clicked.connect(lambda: self.handleAction('reschedule'))
+        button_layout.addWidget(reschedule_btn)
+        
+        # Save anyway button
+        save_anyway_btn = QPushButton("Save Anyway")
+        # Theme system will handle button styling
+        save_anyway_btn.clicked.connect(lambda: self.handleAction('force_save'))
+        button_layout.addWidget(save_anyway_btn)
+        
+        # Cancel button
+        cancel_btn = QPushButton("Cancel")
+        # Theme system will handle button styling
+        cancel_btn.clicked.connect(lambda: self.handleAction('cancel'))
+        button_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def handleAction(self, action):
+        """Handle the action button click."""
+        self.selected_action = action
+        if action == 'reschedule':
+            self.accept()  # Will need to handle rescheduling in parent
+        elif action == 'force_save':
+            # Confirm before force saving
+            reply = QMessageBox.question(
+                self, 'Confirm Save',
+                'Are you sure you want to save this activity with overlapping times?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.accept()
+        else:
+            self.reject()
+    
+    def getAction(self):
+        """Get the selected action."""
+        return self.selected_action
+
+
+class EmptySlotsDialog(QDialog):
+    """Dialog for displaying empty time slots (free time)."""
+    
+    def __init__(self, empty_slots, date, parent=None):
+        super().__init__(parent)
+        self.empty_slots = empty_slots
+        self.date = date
+        self.selected_slot = None
+        
+        self.setWindowTitle(f"Free Time - {date.toString('MMMM d, yyyy')}")
+        self.setMinimumWidth(450)
+        self.setupUI()
+    
+    def setupUI(self):
+        """Set up the UI for the empty slots dialog."""
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Header
+        header = QLabel(f"Free Time on {self.date.toString('dddd, MMMM d, yyyy')}")
+        header.setStyleSheet("font-size: 18px; font-weight: bold; color: #1F2937; margin-bottom: 10px;")
+        layout.addWidget(header)
+        
+        # Summary
+        total_free_minutes = sum(slot['duration_minutes'] for slot in self.empty_slots)
+        total_free_hours = total_free_minutes // 60
+        total_free_mins = total_free_minutes % 60
+        summary = QLabel(f"Total free time: {total_free_hours}h {total_free_mins}m ({len(self.empty_slots)} slots)")
+        # Theme system will handle muted text styling
+        summary.setStyleSheet("margin-bottom: 15px;")
+        layout.addWidget(summary)
+        
+        if not self.empty_slots:
+            # No free time
+            no_free_label = QLabel("No significant free time slots found.")
+            # Theme system will handle muted text styling
+            no_free_label.setStyleSheet("font-size: 14px; padding: 20px;")
+            no_free_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(no_free_label)
+            
+            button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+            button_box.accepted.connect(self.accept)
+            button_box.rejected.connect(self.reject)
+            layout.addWidget(button_box)
+            return
+        
+        # Scroll area for slots
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setMaximumHeight(300)
+        # Theme system will handle scroll area styling
+        
+        slots_widget = QWidget()
+        slots_layout = QVBoxLayout(slots_widget)
+        
+        for i, slot in enumerate(self.empty_slots):
+            slot_frame = QFrame()
+            slot_frame.setProperty("data-card", "true")
+            # Theme system will handle card styling
+            slot_layout = QHBoxLayout(slot_frame)
+            
+            # Time info
+            duration_hours = slot['duration_minutes'] // 60
+            duration_mins = slot['duration_minutes'] % 60
+            duration_str = f"{duration_hours}h {duration_mins}m" if duration_hours > 0 else f"{duration_mins}m"
+            
+            time_info = QLabel(
+                f"<b>{slot['start_time'].toString('HH:mm')} - {slot['end_time'].toString('HH:mm')}</b><br>"
+                f"Duration: {duration_str}"
+            )
+            # Theme system will handle label styling
+            slot_layout.addWidget(time_info)
+            
+            slot_layout.addStretch()
+            
+            # Schedule activity button
+            schedule_btn = QPushButton("Schedule Activity")
+            schedule_btn.setObjectName("primaryBtn")
+            # Theme system will handle button styling
+            schedule_btn.clicked.connect(lambda checked, idx=i: self.scheduleActivity(idx))
+            slot_layout.addWidget(schedule_btn)
+            
+            slots_layout.addWidget(slot_frame)
+        
+        slots_layout.addStretch()
+        scroll.setWidget(slots_widget)
+        layout.addWidget(scroll)
+        
+        # Close button
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+    
+    def scheduleActivity(self, slot_index):
+        """Handle scheduling an activity in the selected slot."""
+        self.selected_slot = self.empty_slots[slot_index]
+        self.accept()
+
+
 class ActivityDetailsDialog(QDialog):
     """Dialog for displaying activity details when clicked in the activities list."""
     
@@ -788,74 +1000,8 @@ class ActivityDetailsDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Set dialog styling with improved contrast
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #FFFFFF;
-                border-radius: 8px;
-                border: 1px solid #D1D5DB;
-            }
-            QLabel {
-                color: #1F2937;
-                font-size: 14px;
-            }
-            QLabel#title {
-                font-size: 18px;
-                font-weight: bold;
-                color: #111827;
-            }
-            QLabel#subtitle {
-                font-size: 16px;  
-                font-weight: bold;
-                color: #4B5563;
-            }
-            QLabel#sectionHeader {
-                font-size: 16px;
-                font-weight: bold;
-                color: #374151;
-                margin-top: 10px;
-            }
-            QPushButton {
-                background-color: #F3F4F6;
-                border: 1px solid #D1D5DB;
-                border-radius: 6px;
-                padding: 8px 12px;
-                color: #374151;
-                font-weight: bold;
-                font-size: 13px;
-                min-height: 36px;
-            }
-            QPushButton:hover {
-                background-color: #E5E7EB;
-            }
-            QPushButton#primaryBtn {
-                background-color: #4F46E5;
-                color: white;
-                border: none;
-            }
-            QPushButton#primaryBtn:hover {
-                background-color: #4338CA;
-            }
-            QPushButton#deleteBtn {
-                background-color: #FEE2E2;
-                color: #B91C1C;
-                border: 1px solid #FECACA;
-            }
-            QPushButton#deleteBtn:hover {
-                background-color: #FEE2E2;
-                color: #991B1B;
-            }
-            QFrame#detailsItem {
-                background-color: #F9FAFB;
-                border-radius: 6px;
-                padding: 10px;
-                border: 1px solid #E5E7EB;
-            }
-            QLabel#icon {
-                font-size: 18px;
-                min-width: 30px;
-            }
-        """)
+        # Remove hardcoded stylesheet - let theme system handle styling
+        # The theme system already provides QDialog styling
         
         # Activity header with type indicator
         header_layout = QHBoxLayout()
@@ -865,14 +1011,9 @@ class ActivityDetailsDialog(QDialog):
         type_indicator.setFixedSize(32, 32)
         
         activity_type = self.activity.get('type', '')
-        if activity_type == 'task':
-            type_indicator.setStyleSheet("background-color: #F87171; border-radius: 16px;")
-        elif activity_type == 'event':
-            type_indicator.setStyleSheet("background-color: #818CF8; border-radius: 16px;")
-        elif activity_type == 'habit':
-            type_indicator.setStyleSheet("background-color: #34D399; border-radius: 16px;")
-        else:
-            type_indicator.setStyleSheet("background-color: #9CA3AF; border-radius: 16px;")
+        type_indicator.setProperty("data-activity-type", activity_type)
+        # Theme system will style this via QFrame[data-activity-type="..."]
+        type_indicator.setStyleSheet("border-radius: 16px;")
             
         header_layout.addWidget(type_indicator)
         
@@ -895,7 +1036,8 @@ class ActivityDetailsDialog(QDialog):
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
         separator.setFrameShadow(QFrame.Shadow.Sunken)
-        separator.setStyleSheet("background-color: #E5E7EB; border: none; height: 2px;")
+        separator.setFixedHeight(2)
+        # Theme system will handle separator styling
         layout.addWidget(separator)
         
         # Details section
@@ -1142,6 +1284,20 @@ class UnifiedActivitiesWidget(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.parent = parent
+        self.activities = {'task': [], 'event': [], 'habit': []}
+        # Attempt to connect to DB via parent's ActivitiesManager
+        try:
+            if hasattr(parent, 'activities_manager'):
+                self.activities_manager = parent.activities_manager
+            else:
+                self.activities_manager = ActivitiesManager()
+                if hasattr(parent, 'conn') and hasattr(parent, 'cursor'):
+                    self.activities_manager.set_connection(parent.conn, parent.cursor)
+            # Ensure tables exist
+            self.activities_manager.create_tables()
+        except Exception as e:
+            print(f"UnifiedActivitiesWidget init error: {e}")
         self.parent = parent  # Store parent to access database
         
         # Initialize activities manager
@@ -1270,16 +1426,7 @@ class UnifiedActivitiesWidget(QWidget):
         self.calendar_btn.setFixedSize(40, 40)
         self.calendar_btn.setToolTip("Select Date")
         self.calendar_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.calendar_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #F3F4F6;
-                border: 1px solid #E5E7EB;
-                border-radius: 20px;
-            }
-            QPushButton:hover {
-                background-color: #E5E7EB;
-            }
-        """)
+        # Theme system will handle button styling
         self.calendar_btn.clicked.connect(self.showDatePicker)
         date_layout.addWidget(self.calendar_btn)
         
@@ -1293,20 +1440,40 @@ class UnifiedActivitiesWidget(QWidget):
         self.next_day_btn.setFixedSize(40, 40)
         self.next_day_btn.setToolTip("Next Day")
         self.next_day_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.next_day_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #F3F4F6;
-                border: 1px solid #E5E7EB;
-                border-radius: 20px;
-            }
-            QPushButton:hover {
-                background-color: #E5E7EB;
-            }
-        """)
+        # Theme system will handle button styling
         self.next_day_btn.clicked.connect(self.nextDay)
         date_layout.addWidget(self.next_day_btn)
         
         header_layout.addLayout(date_layout)
+
+        # Template controls
+        try:
+            self.template_manager = TemplateManager(self.parent.conn, self.parent.cursor)
+            self.template_manager.create_tables()
+        except Exception:
+            self.template_manager = None
+
+        if self.template_manager:
+            template_bar = QHBoxLayout()
+            template_bar.setSpacing(8)
+            self.template_combo = QComboBox()
+            self.template_combo.setObjectName("templateCombo")
+            self.template_combo.setMinimumWidth(160)
+            self._reload_templates_into_combo()
+            self.template_combo.currentIndexChanged.connect(self._on_template_selected)
+            template_bar.addWidget(self.template_combo)
+
+            apply_btn = QPushButton("Apply")
+            apply_btn.setObjectName("templateApplyBtn")
+            apply_btn.clicked.connect(self._apply_selected_template)
+            template_bar.addWidget(apply_btn)
+
+            save_btn = QPushButton("Save Habits as Template")
+            save_btn.setObjectName("templateSaveBtn")
+            save_btn.clicked.connect(self._save_current_habits_as_template)
+            template_bar.addWidget(save_btn)
+
+            header_layout.addLayout(template_bar)
         
         # Filter button
         self.filter_btn = QPushButton()
@@ -1376,74 +1543,16 @@ class UnifiedActivitiesWidget(QWidget):
         
         # Empty state message
         self.empty_state = QLabel("No activities for this day")
+        self.empty_state.setObjectName("emptyState")
         self.empty_state.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self.empty_state.setStyleSheet("color: #6B7280; margin-top: 60px; font-size: 18pt;")  # Reduced margin and font
+        # Theme system will handle empty state styling via object name
         self.activities_layout.addWidget(self.empty_state)
         
         self.main_layout.addWidget(self.scroll_area)
         
-        # Apply styles
-        self.setStyleSheet("""
-            #activitiesHeader {
-                background-color: #FFFFFF;
-                border-top-left-radius: 12px;  /* Increased from 8px */
-                border-top-right-radius: 12px;  /* Increased from 8px */
-            }
-            #activitiesTitle {
-                color: #111827;
-            }
-            #filterButton {
-                background-color: #F3F4F6;
-                border: 2px solid #E5E7EB;  /* Increased from 1px */
-                border-radius: 12px;  /* Increased from 8px */
-            }
-            #filterButton:hover {
-                background-color: #E5E7EB;
-            }
-            #addActivityButton {
-                background-color: #4F46E5;
-                color: white;
-                border: none;
-                border-radius: 12px;  /* Increased from 6px */
-                padding: 16px 32px;  /* Doubled from 8px 16px */
-                font-weight: bold;
-            }
-            #addActivityButton:hover {
-                background-color: #4338CA;
-            }
-            #addActivityButton:pressed {
-                background-color: #3730A3;
-            }
-            #activitiesSeparator {
-                background-color: #E5E7EB;
-            }
-            #activitiesScrollArea {
-                background-color: #F9FAFB;
-            }
-            #activitiesContainer {
-                background-color: #F9FAFB;
-            }
-            QScrollBar:vertical {
-                border: none;
-                background: #F9FAFB;
-                width: 12px;  /* Increased from 8px */
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #D1D5DB;
-                min-height: 45px;  /* Increased from 30px */
-                border-radius: 6px;  /* Increased from 4px */
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #9CA3AF;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: none;
-            }
-        """)
+        # Remove hardcoded styles - theme system handles styling via object names
+        # Object names are already set: activitiesHeader, activitiesTitle, filterButton, 
+        # addActivityButton, activitiesSeparator, activitiesScrollArea, activitiesContainer
     
     def showDatePicker(self, event=None):
         """Show a date picker to select a specific date."""
@@ -1459,43 +1568,7 @@ class UnifiedActivitiesWidget(QWidget):
         calendar.setSelectedDate(self.current_date)
         calendar.setGridVisible(True)
         
-        # Highlight current date
-        calendar.setStyleSheet("""
-            QCalendarWidget QWidget#qt_calendar_navigationbar {
-                background-color: #F3F4F6;
-            }
-            QCalendarWidget QToolButton {
-                color: #4F46E5;
-                background-color: #F3F4F6;
-                border: 1px solid #D1D5DB;
-                border-radius: 4px;
-                padding: 5px;
-            }
-            QCalendarWidget QToolButton:hover {
-                background-color: #E0E7FF;
-                border: 1px solid #6366F1;
-            }
-            QCalendarWidget QMenu {
-                background-color: #FFFFFF;
-                border: 1px solid #D1D5DB;
-            }
-            QCalendarWidget QSpinBox {
-                border: 1px solid #D1D5DB;
-                border-radius: 4px;
-                background-color: #FFFFFF;
-                padding: 2px;
-            }
-            QCalendarWidget QAbstractItemView:enabled {
-                background-color: #FFFFFF;
-                color: #1F2937;
-                selection-background-color: #EEF2FF;
-                selection-color: #4F46E5;
-            }
-            QCalendarWidget QAbstractItemView:disabled {
-                color: #D1D5DB;
-            }
-        """)
-        
+        # Theme system will handle calendar styling
         layout.addWidget(calendar)
         
         # Add buttons
@@ -1581,6 +1654,65 @@ class UnifiedActivitiesWidget(QWidget):
             self.refreshActivitiesList()
         except Exception as e:
             print(f"Error loading activities: {e}")
+
+    # ---------- Template integration ----------
+    def _reload_templates_into_combo(self):
+        if not getattr(self, 'template_manager', None):
+            return
+        try:
+            self.template_combo.blockSignals(True)
+            self.template_combo.clear()
+            items = self.template_manager.list_templates()
+            for tid, name in items:
+                self.template_combo.addItem(name, tid)
+            active_id = self.template_manager.get_active_template_id()
+            if active_id is not None:
+                idx = self.template_combo.findData(active_id)
+                if idx >= 0:
+                    self.template_combo.setCurrentIndex(idx)
+        finally:
+            self.template_combo.blockSignals(False)
+
+    def _on_template_selected(self, _index: int):
+        # Selection alone does not apply; keep UX simple
+        pass
+
+    def _apply_selected_template(self):
+        if not getattr(self, 'template_manager', None):
+            return
+        tid = self.template_combo.currentData()
+        if tid is None:
+            return
+        try:
+            # Apply to DB, replacing current habits
+            self.template_manager.set_active_template(int(tid), replace_existing=True)
+            # Refresh activities everywhere
+            self.refresh()
+            # Also inform parent weekly view if present
+            if hasattr(self.parent, 'weekly_plan_view') and getattr(self.parent, 'weekly_plan_view'):
+                try:
+                    self.parent.weekly_plan_view.loadActivities()
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"Failed to apply template: {e}")
+
+    def _save_current_habits_as_template(self):
+        if not getattr(self, 'template_manager', None):
+            return
+        try:
+            from PyQt6.QtWidgets import QInputDialog
+            name, ok = QInputDialog.getText(self, "Save Habit Template", "Template name:")
+            if not ok or not name.strip():
+                return
+            tid = self.template_manager.save_template_from_current_habits(name.strip(), overwrite=True)
+            self._reload_templates_into_combo()
+            # Select the saved one
+            idx = self.template_combo.findData(tid)
+            if idx >= 0:
+                self.template_combo.setCurrentIndex(idx)
+        except Exception as e:
+            print(f"Failed to save template: {e}")
     
     def refresh(self):
         """Refresh the activities list."""
@@ -1647,18 +1779,21 @@ class UnifiedActivitiesWidget(QWidget):
             self.addActivity(activity_data)
     
     def showEditActivityDialog(self, activity_id, activity_type):
-        """Show the dialog to edit an existing activity."""
-        # Check if this is a special action (duplicate or reschedule)
+        """Show the dialog to edit an activity."""
+        # Handle special action types
         if activity_type.startswith("duplicate_"):
-            original_type = activity_type.replace("duplicate_", "")
+            original_type = activity_type.split("_")[1]
             self.duplicateActivity(activity_id, original_type)
             return
         elif activity_type.startswith("reschedule_"):
-            original_type = activity_type.replace("reschedule_", "")
+            original_type = activity_type.split("_")[1]
             self.rescheduleActivity(activity_id, original_type)
             return
         elif activity_type == "delete_today_habit":
             self.deleteHabitForToday(activity_id)
+            return
+        elif activity_type == "edit_today_habit":
+            self.editHabitForToday(activity_id)
             return
         
         # Find the activity in our list
@@ -2073,7 +2208,12 @@ class UnifiedActivitiesWidget(QWidget):
         
         # Add empty state if needed
         if len(filtered_activities) == 0:
-            self.empty_state.setText(f"No activities found for {self.current_date.toString('MMMM d, yyyy')}")
+            # Remove existing empty state if present
+            if hasattr(self, 'empty_state') and self.empty_state:
+                self.empty_state.setParent(None)
+            
+            # Create enhanced empty state
+            self.empty_state = self.createEmptyState()
             self.empty_state.setParent(self.activities_container)
             self.activities_layout.addWidget(self.empty_state)
             self.empty_state.show()
@@ -2098,6 +2238,67 @@ class UnifiedActivitiesWidget(QWidget):
         
         # Force layout update
         self.activities_container.updateGeometry()
+    
+    def createEmptyState(self):
+        """Create an enhanced empty state widget."""
+        empty_widget = QWidget()
+        empty_widget.setObjectName("emptyState")
+        
+        layout = QVBoxLayout(empty_widget)
+        layout.setContentsMargins(40, 60, 40, 60)
+        layout.setSpacing(20)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Icon
+        icon_label = QLabel()
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        calendar_icon = get_icon("calendar")
+        if not calendar_icon.isNull():
+            icon_label.setPixmap(calendar_icon.pixmap(QSize(64, 64)))
+        else:
+            icon_label.setText("📅")
+            icon_label.setStyleSheet("font-size: 48px;")
+        layout.addWidget(icon_label)
+        
+        # Title
+        title_label = QLabel(f"No activities for {self.current_date.toString('MMMM d, yyyy')}")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        font = QFont()
+        font.setPointSize(16)
+        font.setBold(True)
+        title_label.setFont(font)
+        title_label.setStyleSheet("color: #374151; margin-top: 10px;")
+        layout.addWidget(title_label)
+        
+        # Description
+        desc_label = QLabel("Get started by adding a task, event, or habit")
+        desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        desc_label.setStyleSheet("color: #6B7280; font-size: 14px; margin-top: 5px;")
+        layout.addWidget(desc_label)
+        
+        # Action button
+        action_btn = QPushButton("Add Activity")
+        action_btn.setObjectName("addActivityButton")
+        action_btn.setFixedWidth(200)
+        action_btn.clicked.connect(self.showAddActivityDialog)
+        action_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6366F1;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-weight: bold;
+                font-size: 14px;
+                margin-top: 20px;
+            }
+            QPushButton:hover {
+                background-color: #4F46E5;
+            }
+        """)
+        layout.addWidget(action_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        return empty_widget
     
     def addActivityWidget(self, activity):
         """Add an activity widget to the list."""
@@ -2208,38 +2409,6 @@ class UnifiedActivitiesWidget(QWidget):
             activity_data = dialog.getActivityData()
             self.addActivity(activity_data)
             
-    def showEditActivityDialog(self, activity_id, activity_type):
-        """Show the dialog to edit an existing activity."""
-        # Check if this is a special action (duplicate or reschedule)
-        if activity_type.startswith("duplicate_"):
-            original_type = activity_type.replace("duplicate_", "")
-            self.duplicateActivity(activity_id, original_type)
-            return
-        elif activity_type.startswith("reschedule_"):
-            original_type = activity_type.replace("reschedule_", "")
-            self.rescheduleActivity(activity_id, original_type)
-            return
-        elif activity_type == "delete_today_habit":
-            self.deleteHabitForToday(activity_id)
-            return
-        
-        # Find the activity in our list
-        activity_data = None
-        for activity in self.activities:
-            if activity.get('id') == activity_id and activity.get('type') == activity_type:
-                activity_data = activity
-                break
-        
-        if activity_data:
-            dialog = ActivityAddEditDialog(self, activity_data, edit_mode=True)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                updated_data = dialog.getActivityData()
-                self.updateActivity(activity_id, activity_type, updated_data)
-                
-                # If this is an event, make sure the calendar is updated
-                if activity_type == 'event':
-                    self.syncWithCalendar()
-                    
     def deleteHabitForToday(self, habit_id):
         """Remove a habit for the current day only by modifying its days_of_week property."""
         # Find the habit in our list
@@ -2344,26 +2513,8 @@ class UnifiedActivitiesWidget(QWidget):
     def showFilterMenu(self):
         """Show the filter menu for activities."""
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #FFFFFF;
-                border: 1px solid #E5E7EB;
-                border-radius: 4px;
-                padding: 5px;
-            }
-            QMenu::item {
-                padding: 6px 25px 6px 6px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #EEF2FF;
-                color: #4F46E5;
-            }
-            QMenu::indicator {
-                width: 18px;
-                height: 18px;
-            }
-        """)
+        menu.setObjectName("filterMenu")
+        # Theme system will handle menu styling via object name
         
         # Get counts for each type for the menu
         task_count = sum(1 for a in self.activities if a['type'] == 'task')
@@ -2430,28 +2581,288 @@ class UnifiedActivitiesWidget(QWidget):
     
     def updateFilterButtonState(self):
         """Update the filter button appearance based on current filter state."""
+        from app.themes import ThemeManager
+        
         # Check if any filters are active (not all types are shown)
         all_showing = all(self.filter_settings.values())
         any_showing = any(self.filter_settings.values())
         
+        surface2 = ThemeManager.get_color("surface2")
+        border = ThemeManager.get_color("border")
+        error = ThemeManager.get_color("error")
+        error_bg = ThemeManager.get_color("error_bg")
+        primary = ThemeManager.get_color("primary")
+        selection = ThemeManager.get_color("selection")
+        
         if all_showing:
             # All types are showing - regular state
-            self.filter_btn.setStyleSheet("""
-                background-color: #F3F4F6;
-                border: 1px solid #E5E7EB;
+            self.filter_btn.setStyleSheet(f"""
+                background-color: {surface2};
+                border: 1px solid {border};
                 border-radius: 8px;
             """)
         elif not any_showing:
             # No types are showing - error state
-            self.filter_btn.setStyleSheet("""
-                background-color: #FEE2E2;
-                border: 1px solid #EF4444;
+            self.filter_btn.setStyleSheet(f"""
+                background-color: {error_bg};
+                border: 1px solid {error};
                 border-radius: 8px;
             """)
         else:
             # Some types are showing - active filter state
-            self.filter_btn.setStyleSheet("""
-                background-color: #E0E7FF;
-                border: 1px solid #6366F1;
+            self.filter_btn.setStyleSheet(f"""
+                background-color: {selection};
+                border: 1px solid {primary};
                 border-radius: 8px;
             """)
+
+    def editHabitForToday(self, habit_id):
+        """Edit a habit for the current day only without affecting the routine."""
+        # Find the habit in our list
+        habit = None
+        for activity in self.activities:
+            if activity.get('id') == habit_id and activity.get('type') == 'habit':
+                habit = activity
+                break
+                
+        if not habit:
+            return
+            
+        # Get the current day name and date
+        current_day_name = self.current_date.toString("dddd")  # e.g., "Monday"
+        current_date = self.current_date
+        
+        # Create a copy of the habit data for a single-day instance
+        one_time_habit = dict(habit)
+        one_time_habit.pop('id', None)  # Remove the ID to create a new entry
+        
+        # Set the one-time habit to only appear on the current date
+        one_time_habit['date'] = current_date
+        one_time_habit['days_of_week'] = ''  # Clear recurring days
+        
+        # Get the current days of the week for the original habit
+        days_of_week = habit.get('days_of_week', '')
+        days_list = days_of_week.split(',') if days_of_week else []
+        
+        # Check if current day exists in the list for the original habit
+        if current_day_name in days_list:
+            # Remove this day from the original habit's schedule
+            days_list.remove(current_day_name)
+            
+            # Update the original habit to skip the current day
+            updated_data = {
+                'days_of_week': ','.join(days_list)
+            }
+            
+            # Update the original habit in the database
+            self.activities_manager.update_activity(habit_id, updated_data)
+            
+            # Update in our list
+            habit['days_of_week'] = ','.join(days_list)
+            
+        # Check if the habit already has a specific date entry for today
+        specific_date_habit = None
+        current_date_str = current_date.toString("yyyy-MM-dd")
+        
+        for activity in self.activities:
+            if activity.get('type') == 'habit':
+                habit_date = activity.get('date')
+                if hasattr(habit_date, 'toString'):
+                    habit_date_str = habit_date.toString("yyyy-MM-dd")
+                else:
+                    habit_date_str = habit_date
+                    
+                if (habit_date_str == current_date_str and 
+                    activity.get('title') == habit.get('title')):
+                    specific_date_habit = activity
+                    break
+        
+        # Create a custom edit dialog for single day editing
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Edit Habit for Today Only")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+        
+        # Title
+        title_layout = QHBoxLayout()
+        title_label = QLabel("Title:")
+        title_layout.addWidget(title_label)
+        
+        title_input = QLineEdit()
+        title_input.setPlaceholderText("Enter habit title")
+        title_input.setText(habit.get('title', ''))
+        title_layout.addWidget(title_input)
+        layout.addLayout(title_layout)
+        
+        # Notice that this is for today only
+        today_label = QLabel(f"This will modify the habit for {current_date.toString('dddd, MMMM d')} only.")
+        today_label.setStyleSheet("color: #4F46E5; font-weight: bold;")
+        layout.addWidget(today_label)
+        
+        # Time range
+        time_layout = QHBoxLayout()
+        
+        start_time_label = QLabel("Start Time:")
+        time_layout.addWidget(start_time_label)
+        
+        start_time_input = QTimeEdit()
+        start_time = habit.get('start_time')
+        if hasattr(start_time, 'toString'):
+            start_time_input.setTime(start_time)
+        elif isinstance(start_time, str) and ':' in start_time:
+            start_time_input.setTime(QTime.fromString(start_time, "HH:mm"))
+        else:
+            start_time_input.setTime(QTime.currentTime())
+        time_layout.addWidget(start_time_input)
+        
+        end_time_label = QLabel("End Time:")
+        time_layout.addWidget(end_time_label)
+        
+        end_time_input = QTimeEdit()
+        end_time = habit.get('end_time')
+        if hasattr(end_time, 'toString'):
+            end_time_input.setTime(end_time)
+        elif isinstance(end_time, str) and ':' in end_time:
+            end_time_input.setTime(QTime.fromString(end_time, "HH:mm"))
+        else:
+            end_time_input.setTime(QTime.currentTime().addSecs(3600))
+        time_layout.addWidget(end_time_input)
+        
+        layout.addLayout(time_layout)
+        
+        # Category
+        category_layout = QHBoxLayout()
+        category_label = QLabel("Category:")
+        category_layout.addWidget(category_label)
+        
+        category_combo = QComboBox()
+        category_combo.addItems(["Work", "Personal", "Health", "Learning", "Other"])
+        current_category = habit.get('category', 'Work')
+        index = category_combo.findText(current_category)
+        if index >= 0:
+            category_combo.setCurrentIndex(index)
+        category_layout.addWidget(category_combo)
+        
+        layout.addLayout(category_layout)
+        
+        # Color selector
+        color_layout = QHBoxLayout()
+        color_label = QLabel("Color:")
+        color_layout.addWidget(color_label)
+        
+        # Color display
+        color_preview = QFrame()
+        color_preview.setFixedSize(30, 30)
+        current_color = QColor(habit.get('color', "#34D399"))
+        color_preview.setStyleSheet(f"""
+            background-color: {current_color.name()};
+            border-radius: 4px;
+            border: 1px solid #CBD5E1;
+        """)
+        color_layout.addWidget(color_preview)
+        
+        # Color button
+        color_button = QPushButton("Choose Color")
+        color_layout.addWidget(color_button)
+        
+        # Capture the current color in the dialog scope for the color selector
+        dialog.current_color = current_color
+        
+        # Define color selector within the dialog scope
+        def select_color():
+            color = QColorDialog.getColor(dialog.current_color, self, "Select Habit Color")
+            if color.isValid():
+                dialog.current_color = color
+                color_preview.setStyleSheet(f"""
+                    background-color: {color.name()};
+                    border-radius: 4px;
+                    border: 1px solid #CBD5E1;
+                """)
+        
+        color_button.clicked.connect(select_color)
+        
+        layout.addLayout(color_layout)
+        
+        # Completion status
+        completed_check = QCheckBox("Mark as completed")
+        completed_check.setChecked(habit.get('completed', False))
+        layout.addWidget(completed_check)
+        
+        # Button box
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+        
+        # If a specific date entry already exists, load its values
+        if specific_date_habit:
+            title_input.setText(specific_date_habit.get('title', ''))
+            
+            # Set start time
+            start_time = specific_date_habit.get('start_time')
+            if hasattr(start_time, 'toString'):
+                start_time_input.setTime(start_time)
+            elif isinstance(start_time, str) and ':' in start_time:
+                start_time_input.setTime(QTime.fromString(start_time, "HH:mm"))
+                
+            # Set end time
+            end_time = specific_date_habit.get('end_time')
+            if hasattr(end_time, 'toString'):
+                end_time_input.setTime(end_time)
+            elif isinstance(end_time, str) and ':' in end_time:
+                end_time_input.setTime(QTime.fromString(end_time, "HH:mm"))
+                
+            # Set category
+            current_category = specific_date_habit.get('category', 'Work')
+            index = category_combo.findText(current_category)
+            if index >= 0:
+                category_combo.setCurrentIndex(index)
+                
+            # Set color
+            if 'color' in specific_date_habit:
+                if isinstance(specific_date_habit['color'], QColor):
+                    current_color = specific_date_habit['color']
+                elif isinstance(specific_date_habit['color'], str):
+                    current_color = QColor(specific_date_habit['color'])
+                color_preview.setStyleSheet(f"""
+                    background-color: {current_color.name()};
+                    border-radius: 4px;
+                    border: 1px solid #CBD5E1;
+                """)
+            
+            # Set completion status
+            completed_check.setChecked(specific_date_habit.get('completed', False))
+        
+        # Show the dialog and process result
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Create a new one-time habit or update existing one
+            habit_data = {
+                'type': 'habit',
+                'title': title_input.text(),
+                'date': current_date,
+                'start_time': start_time_input.time(),
+                'end_time': end_time_input.time(),
+                'category': category_combo.currentText(),
+                'color': dialog.current_color.name(),
+                'completed': completed_check.isChecked(),
+                'days_of_week': ''  # Important: ensure this is empty for single-day habits
+            }
+            
+            if specific_date_habit:
+                # Update existing single-day habit
+                self.updateActivity(specific_date_habit.get('id'), 'habit', habit_data)
+            else:
+                # Create a new one-time habit
+                self.addActivity(habit_data)
+            
+            # Refresh the UI
+            self.refreshActivitiesList()
+            
+            # Show confirmation message
+            QMessageBox.information(
+                self,
+                "Habit Modified for Today",
+                f"This habit has been modified for {current_date.toString('dddd, MMMM d')} only. The regular schedule remains unchanged for other days."
+            )

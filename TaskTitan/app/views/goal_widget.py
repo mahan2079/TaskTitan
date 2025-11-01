@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                            QTabWidget, QGraphicsView, QGraphicsScene, QGraphicsRectItem, 
                            QGraphicsTextItem, QGraphicsLineItem, QSlider, QGraphicsItem,
                            QGraphicsSceneWheelEvent, QGraphicsPathItem, QGraphicsEllipseItem,
-                           QGraphicsDropShadowEffect, QProgressBar)
+                           QGraphicsDropShadowEffect, QProgressBar, QColorDialog)
 from PyQt6.QtCore import Qt, QDate, QTime, pyqtSignal, QRectF, QPointF, QTimer, QEvent, QPoint
 from PyQt6.QtGui import QIcon, QFont, QColor, QPen, QBrush, QWheelEvent, QPainter, QPainterPath, QAction, QFontMetrics
 from datetime import datetime, timedelta
@@ -170,28 +170,15 @@ class CustomGraphicsView(QGraphicsView):
         
         # Create content frame
         content = QFrame()
-        content.setStyleSheet("""
-            QFrame {
-                background-color: #FFFFFF;
-                border: 1px solid #D1D5DB;
-                border-radius: 8px;
-            }
-            QLabel {
-                color: #000000;
-                padding: 4px 0px;
-            }
-            QLabel#titleLabel {
-                font-size: 14px;
-                font-weight: bold;
-                color: #000000;
-            }
-        """)
+        content.setProperty("data-card", "true")
+        # Theme system will handle styling via data-card property
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(12, 12, 12, 12)
         
         # Add goal details
         title_label = QLabel(goal['title'])
         title_label.setObjectName("titleLabel")
+        # Theme system will handle label styling
         content_layout.addWidget(title_label)
         
         # Calculate progress
@@ -247,52 +234,15 @@ class AddGoalDialog(QDialog):
         self.setMinimumWidth(400)
         self.goal_data = goal_data or {}
         
-        # Set dialog styling
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #FFFFFF;
-            }
-            QLabel {
-                color: #000000;
-                font-weight: bold;
-            }
-            QLineEdit, QDateEdit, QTimeEdit, QComboBox {
-                background-color: #F9FAFB;
-                border: 1px solid #D1D5DB;
-                border-radius: 4px;
-                padding: 6px;
-                color: #000000;
-                font-weight: 500;
-            }
-            QLineEdit:focus, QDateEdit:focus, QTimeEdit:focus, QComboBox:focus {
-                border: 1px solid #4F46E5;
-            }
-            QPushButton {
-                background-color: #4F46E5;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #4338CA;
-            }
-            QPushButton:pressed {
-                background-color: #3730A3;
-            }
-            QDialogButtonBox {
-                background-color: #F9FAFB;
-                border-top: 1px solid #E5E7EB;
-                padding: 10px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #FFFFFF;
-                color: #000000;
-                selection-background-color: #EEF2FF;
-                selection-color: #000000;
-            }
-        """)
+        # Define default colors for each priority
+        self.default_colors = {
+            0: "#60A5FA",  # Blue for low
+            1: "#FBBF24",  # Yellow for medium 
+            2: "#EF4444"   # Red for high
+        }
+        
+        # Remove hardcoded stylesheet - let theme system handle styling
+        # The theme system already provides QDialog styling
         
         self.setupUI()
         
@@ -372,15 +322,75 @@ class AddGoalDialog(QDialog):
         
         if 'priority' in self.goal_data:
             self.priority_input.setCurrentIndex(self.goal_data['priority'])
-            
+        
+        # Update color selector when priority changes    
+        self.priority_input.currentIndexChanged.connect(self.updateDefaultColor)
+        
         priority_layout.addWidget(self.priority_input)
         layout.addLayout(priority_layout)
+        
+        # Color selection
+        color_layout = QHBoxLayout()
+        color_label = QLabel("Color:")
+        color_layout.addWidget(color_label)
+        
+        # Create a button that shows the current color and opens a color dialog
+        self.color_button = QPushButton()
+        self.color_button.setFixedSize(30, 30)
+        self.color_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.color_button.clicked.connect(self.openColorDialog)
+        
+        # Set initial color
+        if 'color' in self.goal_data and self.goal_data['color']:
+            self.current_color = QColor(self.goal_data['color'])
+        else:
+            # Use default color based on priority
+            priority = self.goal_data.get('priority', 1)
+            self.current_color = QColor(self.default_colors[priority])
+            
+        self.updateColorButton()
+        color_layout.addWidget(self.color_button)
+        
+        # Add a "Reset to Default" button
+        self.reset_color_button = QPushButton("Reset to Default")
+        self.reset_color_button.clicked.connect(self.resetToDefaultColor)
+        color_layout.addWidget(self.reset_color_button)
+        
+        layout.addLayout(color_layout)
         
         # Add buttons
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(self.button_box)
+    
+    def updateColorButton(self):
+        """Update the color button to show the current color."""
+        self.color_button.setStyleSheet(
+            f"background-color: {self.current_color.name()}; "
+            f"border: 1px solid #D1D5DB; "
+            f"border-radius: 4px;"
+        )
+    
+    def openColorDialog(self):
+        """Open a color dialog to select a custom color."""
+        dialog = QColorDialog(self.current_color, self)
+        dialog.setOptions(QColorDialog.ColorDialogOption.DontUseNativeDialog)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.current_color = dialog.currentColor()
+            self.updateColorButton()
+    
+    def updateDefaultColor(self, index):
+        """Update color when priority changes."""
+        self.current_color = QColor(self.default_colors[index])
+        self.updateColorButton()
+    
+    def resetToDefaultColor(self):
+        """Reset color to default based on current priority."""
+        priority = self.priority_input.currentIndex()
+        self.current_color = QColor(self.default_colors[priority])
+        self.updateColorButton()
     
     def getGoalData(self):
         """Get the goal data from the dialog inputs."""
@@ -390,7 +400,8 @@ class AddGoalDialog(QDialog):
             'created_date': self.start_date_input.date().toString("yyyy-MM-dd"),
             'due_date': self.due_date_input.date().toString("yyyy-MM-dd"),
             'due_time': self.time_input.time().toString("HH:mm"),
-            'priority': self.priority_input.currentIndex()
+            'priority': self.priority_input.currentIndex(),
+            'color': self.current_color.name()
         }
 
 class GoalTimelineWidget(QWidget):
@@ -402,8 +413,8 @@ class GoalTimelineWidget(QWidget):
         
         # Timeline view settings
         self.zoom_factor = 1.0
-        self.min_zoom = 0.1
-        self.max_zoom = 3.0
+        self.min_zoom = 0.2  # Increased from 0.1 for better minimum visibility
+        self.max_zoom = 5.0  # Increased from 3.0 to allow deeper zoom
         self.timeline_start = None
         self.timeline_end = None
         
@@ -463,24 +474,56 @@ class GoalTimelineWidget(QWidget):
         legend_label.setStyleSheet("font-weight: bold;")
         controls_layout.addWidget(legend_label)
         
-        # Priority colors
-        low_color = QFrame()
-        low_color.setFixedSize(16, 16)
-        low_color.setStyleSheet("background-color: #60A5FA; border: 1px solid #3B82F6;")
-        controls_layout.addWidget(low_color)
+        # Priority visual indicators - change from circles to triangles
+        low_priority = QFrame()
+        low_priority.setFixedSize(20, 20)
+        low_priority.setStyleSheet("""
+            background-color: transparent;
+            border: none;
+            background-image: url('data:image/svg+xml;utf8,<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg"><polygon points="10,2 2,18 18,18" stroke="#60A5FA" stroke-width="2" fill="white"/></svg>');
+            background-repeat: no-repeat;
+        """)
+        controls_layout.addWidget(low_priority)
         controls_layout.addWidget(QLabel("Low"))
         
-        med_color = QFrame()
-        med_color.setFixedSize(16, 16)
-        med_color.setStyleSheet("background-color: #FBBF24; border: 1px solid #D97706;")
-        controls_layout.addWidget(med_color)
+        med_priority = QFrame()
+        med_priority.setFixedSize(20, 20)
+        med_priority.setStyleSheet("""
+            background-color: transparent;
+            border: none;
+            background-image: url('data:image/svg+xml;utf8,<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg"><polygon points="10,2 2,18 18,18" stroke="#FBBF24" stroke-width="2" fill="white"/></svg>');
+            background-repeat: no-repeat;
+        """)
+        controls_layout.addWidget(med_priority)
         controls_layout.addWidget(QLabel("Medium"))
         
-        high_color = QFrame()
-        high_color.setFixedSize(16, 16)
-        high_color.setStyleSheet("background-color: #EF4444; border: 1px solid #B91C1C;")
-        controls_layout.addWidget(high_color)
+        high_priority = QFrame()
+        high_priority.setFixedSize(20, 20)
+        high_priority.setStyleSheet("""
+            background-color: transparent;
+            border: none;
+            background-image: url('data:image/svg+xml;utf8,<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg"><polygon points="10,2 2,18 18,18" stroke="#EF4444" stroke-width="3" fill="white"/></svg>');
+            background-repeat: no-repeat;
+        """)
+        controls_layout.addWidget(high_priority)
         controls_layout.addWidget(QLabel("High"))
+        
+        # Add separator
+        controls_layout.addWidget(QLabel(" | "))
+        
+        # Progress circle indicator explanation
+        progress_indicator = QFrame()
+        progress_indicator.setFixedSize(20, 20)
+        progress_indicator.setStyleSheet("background-color: white; border: 2px solid #10B981; border-radius: 10px;")
+        controls_layout.addWidget(progress_indicator)
+        controls_layout.addWidget(QLabel("Progress %"))
+        
+        # Time progress circle indicator explanation
+        time_indicator = QFrame()
+        time_indicator.setFixedSize(20, 20)
+        time_indicator.setStyleSheet("background-color: white; border: 2px solid #6B7280; border-radius: 10px;")
+        controls_layout.addWidget(time_indicator)
+        controls_layout.addWidget(QLabel("Time %"))
         
         # Completed color
         done_color = QFrame()
@@ -618,9 +661,15 @@ class GoalTimelineWidget(QWidget):
         dates = []
         for goal in goals:
             try:
+                # Add due date
                 date_str = goal['due_date']
                 goal_date = datetime.strptime(date_str, "%Y-%m-%d").date()
                 dates.append(goal_date)
+                
+                # Add created/start date if available
+                if 'created_date' in goal and goal['created_date']:
+                    start_date = datetime.strptime(goal['created_date'], "%Y-%m-%d").date()
+                    dates.append(start_date)
             except (ValueError, KeyError):
                 continue
         
@@ -629,17 +678,17 @@ class GoalTimelineWidget(QWidget):
             min_date = min(dates)
             max_date = max(dates)
             
-            # Add padding of 10% of the range on each side
+            # Add padding of 15% of the range on each side
             date_range = (max_date - min_date).days
-            padding = max(7, date_range // 10)  # at least 7 days padding
+            padding = max(10, date_range // 7)  # at least 10 days padding
             
             self.timeline_start = min_date - timedelta(days=padding)
             self.timeline_end = max_date + timedelta(days=padding)
         else:
-            # Default to a range of 30 days centered around today
+            # Default to a range of 60 days centered around today
             today = datetime.now().date()
-            self.timeline_start = today - timedelta(days=15)
-            self.timeline_end = today + timedelta(days=15)
+            self.timeline_start = today - timedelta(days=30)
+            self.timeline_end = today + timedelta(days=30)
     
     def drawTimeAxis(self):
         """Draw the time axis for the timeline."""
@@ -648,11 +697,11 @@ class GoalTimelineWidget(QWidget):
         
         # Draw the main axis
         days = (self.timeline_end - self.timeline_start).days
-        pixels_per_day = 50  # Increased from 30 to 50 pixels per day for better spacing
+        pixels_per_day = 60  # Increased from 50 to 60 pixels per day for better spacing
         axis_width = days * pixels_per_day
         
         # Draw background grid
-        for i in range(0, days + 1, 7):  # Weekly grid
+        for i in range(0, days + 1, 2):  # Draw grid lines every 2 days
             x_pos = i * pixels_per_day
             # Vertical grid line
             grid_line = QGraphicsLineItem(x_pos, -50, x_pos, 1000)
@@ -672,7 +721,6 @@ class GoalTimelineWidget(QWidget):
         
         # Add date markers
         current_date = self.timeline_start
-        month_label = None
         current_month = None
         
         # Add today indicator
@@ -688,7 +736,7 @@ class GoalTimelineWidget(QWidget):
             self.scene.addItem(today_line)
             
             # Add triangle marker at the top
-            marker_size = 10
+            marker_size = 14
             marker_path = QPainterPath()
             marker_path.moveTo(today_x - marker_size/2, -40)  # Left point
             marker_path.lineTo(today_x + marker_size/2, -40)  # Right point
@@ -696,7 +744,7 @@ class GoalTimelineWidget(QWidget):
             marker_path.closeSubpath()
             
             marker = QGraphicsPathItem(marker_path)
-            marker.setPen(QPen(QColor("#4F46E5"), 1))
+            marker.setPen(QPen(QColor("#4F46E5"), 2))
             marker.setBrush(QBrush(QColor("#4F46E5")))
             self.scene.addItem(marker)
             
@@ -728,19 +776,28 @@ class GoalTimelineWidget(QWidget):
                 self.scene.addItem(month_label)
                 current_month = current_date.month
             
-            # Add date label
-            if current_date.day == 1 or current_date.day % 2 == 0:  # Show dates every 2 days
-                date_label = QGraphicsTextItem(current_date.strftime("%d"))
-                date_label.setPos(x_pos - 5, 10)
-                date_label.setFont(QFont("Arial", 8))
-                date_label.setDefaultTextColor(QColor("#000000"))
-                self.scene.addItem(date_label)
+            # Add date label with weekday for every date
+            weekday_abbr = current_date.strftime("%a")  # Mon, Tue, etc.
+            day_num = current_date.strftime("%d")
+            date_label = QGraphicsTextItem(f"{day_num}\n{weekday_abbr}")
+            date_label.setPos(x_pos - 12, 10)
+            date_label.setFont(QFont("Arial", 7))
+            date_label.setDefaultTextColor(QColor("#333333"))
+            
+            # Make weekends bold
+            if current_date.weekday() >= 5:  # Saturday or Sunday
+                font = date_label.font()
+                font.setBold(True)
+                date_label.setFont(font)
+                date_label.setDefaultTextColor(QColor("#0000CC"))  # Dark blue for weekends
+            
+            self.scene.addItem(date_label)
             
             # Highlight weekends
             if current_date.weekday() >= 5:  # Saturday or Sunday
                 weekend_rect = QGraphicsRectItem(x_pos, -50, pixels_per_day, 1000)
                 weekend_rect.setPen(QPen(Qt.PenStyle.NoPen))
-                weekend_rect.setBrush(QBrush(QColor(240, 240, 240, 100)))
+                weekend_rect.setBrush(QBrush(QColor(240, 240, 255, 100)))  # Light blue tint
                 weekend_rect.setZValue(-1)
                 self.scene.addItem(weekend_rect)
             
@@ -770,8 +827,8 @@ class GoalTimelineWidget(QWidget):
     def addGoalToTimeline(self, goal, all_goals, level=0, y_pos=30):
         """Add a single goal and its sub-goals to the timeline."""
         try:
-            # Define colors array at the beginning of the method to make it available throughout
-            colors = ["#60A5FA", "#FBBF24", "#EF4444"]  # Blue, Yellow, Red for low, medium, high
+            # Define default colors array for priorities
+            default_colors = ["#60A5FA", "#FBBF24", "#EF4444"]  # Blue, Yellow, Red for low, medium, high
             
             # Get or derive start date and due date
             due_date = datetime.strptime(goal['due_date'], "%Y-%m-%d").date()
@@ -784,13 +841,13 @@ class GoalTimelineWidget(QWidget):
                 start_date = due_date - timedelta(days=7)
             
             # Calculate positions
-            pixels_per_day = 50  # Match the value used in drawTimeAxis
+            pixels_per_day = 60  # Match the value used in drawTimeAxis
             start_days_from_timeline_start = max(0, (start_date - self.timeline_start).days)
             end_days_from_timeline_start = (due_date - self.timeline_start).days
             
             x_start = start_days_from_timeline_start * pixels_per_day
             x_end = end_days_from_timeline_start * pixels_per_day
-            width = max(80, x_end - x_start)  # Minimum width of 80px for better text visibility
+            width = max(100, x_end - x_start)  # Increased minimum width for better text visibility
             
             # Apply indentation for subgoals based on level
             indent = level * 20
@@ -810,16 +867,50 @@ class GoalTimelineWidget(QWidget):
 
             time_progress = self.calculateTimeProgress(goal)
             
-            # Choose color based on priority and completion
+            # Choose color based on custom color (if available), completed status, or priority
             if goal['completed']:
                 color = QColor("#10B981")  # Green for completed
+            elif 'color' in goal and goal['color']:
+                # Use custom color
+                color = QColor(goal['color'])
             else:
-                color = QColor(colors[goal['priority']])
+                # Fallback to priority-based color
+                color = QColor(default_colors[goal['priority']])
             
             # Create the goal item
             rect = QGraphicsRectItem(x_start, y_pos, width, rect_height)
-            rect.setPen(QPen(color.darker(), 1))
-            rect.setBrush(QBrush(color.lighter()))
+            
+            # Priority-based border styling
+            if not goal['completed']:
+                border_pen = QPen(QColor("#D1D5DB"), 1)  # Neutral border
+                # Add a small colored triangle at the left edge for priority
+                triangle_size = 12
+                triangle_y_center = y_pos + (rect_height / 2)
+                marker_path = QPainterPath()
+                marker_path.moveTo(x_start - triangle_size/2, triangle_y_center - triangle_size/2)  # Top
+                marker_path.lineTo(x_start - triangle_size/2, triangle_y_center + triangle_size/2)  # Bottom
+                marker_path.lineTo(x_start + triangle_size/2, triangle_y_center)  # Right point
+                marker_path.closeSubpath()
+                if goal['priority'] == 0:  # Low
+                    triangle_color = QColor("#60A5FA")
+                elif goal['priority'] == 1:  # Medium
+                    triangle_color = QColor("#FBBF24")
+                else:  # High
+                    triangle_color = QColor("#EF4444")
+                priority_marker = QGraphicsPathItem(marker_path)
+                priority_marker.setPen(QPen(triangle_color, 1))
+                priority_marker.setBrush(QBrush(triangle_color))
+                self.scene.addItem(priority_marker)
+            else:
+                # Completed goals have a green border
+                border_pen = QPen(QColor("#10B981"), 2)
+            
+            rect.setPen(border_pen)
+            
+            # Use a slightly lighter version of the color for the fill
+            light_color = QColor(color)
+            light_color.setAlpha(70)  # Make it transparent
+            rect.setBrush(QBrush(light_color))
             
             # Store goal ID as item data for identification in click handler
             rect.setData(0, goal['id'])
@@ -851,85 +942,49 @@ class GoalTimelineWidget(QWidget):
             text_effect.setBlurRadius(0)
             text_effect.setOffset(1, 1)
             text.setGraphicsEffect(text_effect)
-
-            # Include progress percentage in the tooltip
-            tooltip_html = f"""
-            <div style='background-color:#FFFFFF; color:#000000; padding:8px; border:1px solid #D1D5DB; border-radius:4px; font-weight:bold;'>
-                <span style='font-size:14px;'>{goal['title']}</span><br/>
-                <span style='font-size:12px;'>Due: {goal['due_date']} {goal['due_time']}</span><br/>
-                <span style='font-size:12px;'>Progress: {progress_percentage}%</span><br/>
-                <span style='font-size:12px;'>Time Elapsed: {time_progress}%</span>
-            </div>
-            """
-            rect.setToolTip(tooltip_html)
             
-            # Add special indicator for subgoals (small badge or marker)
-            if level > 0:
-                # Add a small triangular marker on the left to indicate it's a subgoal
-                marker_size = 10
+            # Add progress percentage indicators
+            if not goal['completed']:
+                # Progress circle (completion percentage)
+                progress_diameter = 20
+                circle_x = x_start + width - progress_diameter - 10
+                circle_y = y_pos + (rect_height - progress_diameter) / 2
+                
+                # Create progress circle background
+                progress_circle = QGraphicsEllipseItem(circle_x, circle_y, progress_diameter, progress_diameter)
+                progress_circle.setPen(QPen(Qt.PenStyle.NoPen))
+                progress_circle.setBrush(QBrush(QColor("#FFFFFF")))
+                
+                # Add progress arc
+                progress_span_angle = int(360 * progress_percentage / 100) * 16
+                
+                # Create a path for the progress arc
                 path = QPainterPath()
-                path.moveTo(x_start - marker_size, y_pos + rect_height/2)
-                path.lineTo(x_start, y_pos + rect_height/2 - marker_size/2)
-                path.lineTo(x_start, y_pos + rect_height/2 + marker_size/2)
+                path.moveTo(circle_x + progress_diameter/2, circle_y + progress_diameter/2)
+                path.arcTo(circle_x, circle_y, progress_diameter, progress_diameter, 90, -progress_span_angle)
                 path.closeSubpath()
                 
-                # Create a marker with parent's color
-                parent_goal = next((g for g in all_goals if g['id'] == goal['parent_id']), None)
-                if parent_goal:
-                    if parent_goal['completed']:
-                        marker_color = QColor("#10B981")
-                    else:
-                        marker_color = QColor(colors[parent_goal['priority']])
+                # Choose color based on progress percentage
+                if progress_percentage < 30:
+                    progress_color = QColor("#EF4444")  # Red for low progress
+                elif progress_percentage < 70:
+                    progress_color = QColor("#F59E0B")  # Orange/Yellow for medium progress
                 else:
-                    marker_color = color
-                    
-                marker = QGraphicsPathItem(path)
-                marker.setPen(QPen(marker_color.darker(), 1))
-                marker.setBrush(QBrush(marker_color))
-                self.scene.addItem(marker)
-            
-            # Add progress indicators if not completed
-            if not goal['completed']:
-                # Progress circle (completion progress)
-                if progress_percentage > 0:
-                    progress_diameter = 20
-                    circle_x = x_start + width - progress_diameter - 5
-                    circle_y = y_pos + (rect_height - progress_diameter) / 2
-                    
-                    # Create progress circle
-                    progress_circle = QGraphicsEllipseItem(circle_x, circle_y, progress_diameter, progress_diameter)
-                    progress_circle.setPen(QPen(Qt.PenStyle.NoPen))
-                    progress_circle.setBrush(QBrush(QColor("#FFFFFF")))
-                    
-                    # Add progress arc
-                    span_angle = int(360 * progress_percentage / 100) * 16
-                    
-                    path = QPainterPath()
-                    path.moveTo(circle_x + progress_diameter/2, circle_y + progress_diameter/2)
-                    path.arcTo(circle_x, circle_y, progress_diameter, progress_diameter, 90, -span_angle)
-                    path.closeSubpath()
-                    
-                    # Choose color based on progress
-                    if progress_percentage < 30:
-                        progress_color = QColor("#EF4444")
-                    elif progress_percentage < 70:
-                        progress_color = QColor("#F59E0B")
-                    else:
-                        progress_color = QColor("#10B981")
-                    
-                    progress_arc = QGraphicsPathItem(path)
-                    progress_arc.setPen(QPen(Qt.PenStyle.NoPen))
-                    progress_arc.setBrush(QBrush(progress_color))
-                    
-                    # Add percentage text
-                    progress_text = QGraphicsTextItem(f"{progress_percentage}%")
-                    progress_text.setPos(circle_x - 5, circle_y + progress_diameter + 2)
-                    progress_text.setFont(QFont("Arial", 7))
-                    progress_text.setDefaultTextColor(QColor("#000000"))
-                    
-                    self.scene.addItem(progress_circle)
-                    self.scene.addItem(progress_arc)
-                    self.scene.addItem(progress_text)
+                    progress_color = QColor("#10B981")  # Green for high progress
+                
+                progress_arc = QGraphicsPathItem(path)
+                progress_arc.setPen(QPen(Qt.PenStyle.NoPen))
+                progress_arc.setBrush(QBrush(progress_color))
+                
+                # Add percentage text
+                progress_text = QGraphicsTextItem(f"{progress_percentage}%")
+                progress_text.setPos(circle_x - 5, circle_y + progress_diameter + 2)
+                progress_text.setFont(QFont("Arial", 7))
+                progress_text.setDefaultTextColor(QColor("#000000"))
+                
+                self.scene.addItem(progress_circle)
+                self.scene.addItem(progress_arc)
+                self.scene.addItem(progress_text)
 
                 # Time progress circle
                 time_diameter = 20
@@ -990,83 +1045,28 @@ class GoalTimelineWidget(QWidget):
                 
                 # First calculate the total height needed for all subgoals
                 temp_y = current_y
-                last_end_date = start_date
+                for sub_goal in sub_goals:
+                    # Recursively calculate the height needed for this subgoal and its children
+                    temp_y = self.addGoalToTimeline(sub_goal, all_goals, level + 1, temp_y) + 10
                 
-                # Add a small vertical connection from parent to subgoal group
-                connector = QGraphicsRectItem(x_start + width/2 - 1, y_pos + rect_height, 
-                                            2, 10)  # 2px wide connector line
-                connector.setPen(QPen(Qt.PenStyle.NoPen))
-                connector.setBrush(QBrush(color))
-                self.scene.addItem(connector)
+                # Create a background rect for the group
+                bg_rect = QGraphicsRectItem(x_start, y_pos + rect_height, width, temp_y - current_y + 10)
+                bg_rect.setPen(QPen(Qt.PenStyle.NoPen))
+                bg_rect.setBrush(QBrush(bg_color))
+                bg_rect.setZValue(-1)  # Put it behind the subgoals
+                self.scene.addItem(bg_rect)
                 
-                for i, sub_goal in enumerate(sub_goals):
-                    # Modify subgoal's created_date to start after previous subgoal ends
-                    if not 'created_date' in sub_goal or not sub_goal['created_date']:
-                        if i == 0:
-                            # First subgoal starts at parent's start
-                            sub_goal['created_date'] = start_date.strftime("%Y-%m-%d")
-                        else:
-                            # Subsequent subgoals start when previous one ends
-                            sub_goal['created_date'] = last_end_date.strftime("%Y-%m-%d")
-                    
-                    # Calculate height for this subgoal and its descendants
-                    sub_height = self.calculateSubgoalHeight(sub_goal, all_goals)
-                    temp_y += sub_height + 10  # Reduced spacing from 20 to 10
-                    
-                    # Update last_end_date for next subgoal
-                    sub_due_date = datetime.strptime(sub_goal['due_date'], "%Y-%m-%d").date()
-                    last_end_date = sub_due_date
+                # Add the sub-goals with their actual graphics
+                for sub_goal in sub_goals:
+                    current_y = self.addGoalToTimeline(sub_goal, all_goals, level + 1, current_y) + 10
                 
-                total_height = temp_y - current_y
-                
-                # Limit the width of the background to avoid extending too far
-                # Use the maximum right edge of the parent or its longest subgoal
-                max_right_edge = x_start + width + 20  # Parent width plus some padding
-                
-                # Create a background rectangle to visually group subgoals
-                group_bg = QGraphicsRectItem(x_start - 5, current_y, 
-                                           max_right_edge - x_start + 10, total_height)
-                group_bg.setPen(QPen(Qt.PenStyle.NoPen))
-                group_bg.setBrush(QBrush(bg_color))
-                group_bg.setZValue(-2)  # Place behind everything
-                self.scene.addItem(group_bg)
-                
-                # Create a vertical indicator line on the left side of the subgoal group
-                # Make it slightly shorter to avoid touching the parent goal
-                indicator_line = QGraphicsRectItem(x_start - 5, current_y, 
-                                                3, total_height)
-                indicator_line.setPen(QPen(Qt.PenStyle.NoPen))
-                indicator_line.setBrush(QBrush(color))
-                indicator_line.setZValue(-1)
-                self.scene.addItem(indicator_line)
-                
-                # Reset for actual subgoal placement
-                last_end_date = start_date
-                original_current_y = current_y
-                
-                # Now add each subgoal
-                for i, sub_goal in enumerate(sub_goals):
-                    # Modify subgoal's created_date to start after previous subgoal ends
-                    if not 'created_date' in sub_goal or not sub_goal['created_date']:
-                        if i == 0:
-                            sub_goal['created_date'] = start_date.strftime("%Y-%m-%d")
-                        else:
-                            sub_goal['created_date'] = last_end_date.strftime("%Y-%m-%d")
-                    
-                    # Add the sub-goal and get updated y position
-                    current_y = self.addGoalToTimeline(sub_goal, all_goals, level + 1, current_y)
-                    
-                    # Update last_end_date for next subgoal
-                    sub_due_date = datetime.strptime(sub_goal['due_date'], "%Y-%m-%d").date()
-                    last_end_date = sub_due_date
-                
-                # Add padding after the last subgoal to prevent overlap with the next goal
-                return current_y + 15
-            
-            return y_pos + rect_height
-        
-        except (ValueError, KeyError) as e:
+                return current_y
+            else:
+                return y_pos + rect_height
+        except Exception as e:
             print(f"Error adding goal to timeline: {e}")
+            import traceback
+            traceback.print_exc()
             return y_pos + 30
 
     def calculateSubgoalHeight(self, goal, all_goals):
@@ -1547,6 +1547,7 @@ class GoalWidget(QWidget):
         due_date = goal_data['due_date']
         due_time = goal_data['due_time']
         priority = goal_data['priority']
+        color = goal_data.get('color', None)
         
         if not title:
             QMessageBox.warning(self, "Error", "Goal title cannot be empty")
@@ -1562,11 +1563,18 @@ class GoalWidget(QWidget):
                 except:
                     self.parent.cursor.execute("ALTER TABLE goals ADD COLUMN created_date TEXT")
                     self.parent.conn.commit()
+                
+                # Check if color column exists, if not add it
+                try:
+                    self.parent.cursor.execute("SELECT color FROM goals LIMIT 1")
+                except:
+                    self.parent.cursor.execute("ALTER TABLE goals ADD COLUMN color TEXT")
+                    self.parent.conn.commit()
                     
                 self.parent.cursor.execute("""
-                    INSERT INTO goals (title, parent_id, created_date, due_date, due_time, priority, completed)
-                    VALUES (?, ?, ?, ?, ?, ?, 0)
-                """, (title, parent_id, created_date, due_date, due_time, priority))
+                    INSERT INTO goals (title, parent_id, created_date, due_date, due_time, priority, color, completed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                """, (title, parent_id, created_date, due_date, due_time, priority, color))
                 self.parent.conn.commit()
                 goal_id = self.parent.cursor.lastrowid
             except Exception as e:
@@ -1586,6 +1594,7 @@ class GoalWidget(QWidget):
             'due_date': due_date,
             'due_time': due_time,
             'priority': priority,
+            'color': color,
             'completed': False
         }
         
@@ -2072,6 +2081,7 @@ class GoalWidget(QWidget):
         due_date = goal_data['due_date']
         due_time = goal_data['due_time']
         priority = goal_data['priority']
+        color = goal_data.get('color', None)
         
         if not title:
             QMessageBox.warning(self, "Error", "Goal title cannot be empty")
@@ -2086,12 +2096,19 @@ class GoalWidget(QWidget):
                 except:
                     self.parent.cursor.execute("ALTER TABLE goals ADD COLUMN created_date TEXT")
                     self.parent.conn.commit()
+                
+                # Check if color column exists, if not add it
+                try:
+                    self.parent.cursor.execute("SELECT color FROM goals LIMIT 1")
+                except:
+                    self.parent.cursor.execute("ALTER TABLE goals ADD COLUMN color TEXT")
+                    self.parent.conn.commit()
                     
                 self.parent.cursor.execute("""
                     UPDATE goals
-                    SET title = ?, parent_id = ?, created_date = ?, due_date = ?, due_time = ?, priority = ?
+                    SET title = ?, parent_id = ?, created_date = ?, due_date = ?, due_time = ?, priority = ?, color = ?
                     WHERE id = ?
-                """, (title, parent_id, created_date, due_date, due_time, priority, goal_id))
+                """, (title, parent_id, created_date, due_date, due_time, priority, color, goal_id))
                 self.parent.conn.commit()
             except Exception as e:
                 print(f"Error updating goal in database: {e}")
@@ -2105,6 +2122,7 @@ class GoalWidget(QWidget):
                 goal['due_date'] = due_date
                 goal['due_time'] = due_time
                 goal['priority'] = priority
+                goal['color'] = color
                 break
         
         # Refresh the tree
@@ -2435,37 +2453,35 @@ class GoalWidget(QWidget):
         
         item.setForeground(3, progress_color)
         
+        # Set goal color
+        if goal['completed']:
+            # Completed goals are always green
+            background_color = QColor("#D1FAE5")  # Light green background
+            item.setBackground(0, background_color)
+        elif 'color' in goal and goal['color']:
+            # Use custom color with transparency
+            background_color = QColor(goal['color'])
+            background_color.setAlpha(40)  # Make it very light
+            item.setBackground(0, background_color)
+        else:
+            # Fallback to priority-based colors
+            if goal['priority'] == 0:  # Low
+                item.setBackground(0, QColor("#DBEAFE"))  # Light blue
+            elif goal['priority'] == 1:  # Medium
+                item.setBackground(0, QColor("#FEF3C7"))  # Light yellow
+            else:  # High
+                item.setBackground(0, QColor("#FEE2E2"))  # Light red
+        
         # Create and set a custom progress widget for the progress column
         # (This will be created when item is added to tree in postProcessTreeItems)
         item.setData(3, Qt.ItemDataRole.UserRole, progress)
         
-        # Apply custom styling based on completion status but without backgrounds
-        if goal['completed']:
-            # Set completed item text to dark green without background
-            item.setForeground(0, QColor("#047857"))  # Dark green text
-            
-            # Add a checkmark icon to column 0
-            check_icon = QIcon.fromTheme("emblem-ok", QIcon())
-            if not check_icon.isNull():
-                item.setIcon(0, check_icon)
-        else:
-            # Set text to black for all other items
-            item.setForeground(0, QColor("#000000"))  # Black text
-        
         # Add to parent or root
         if parent_item:
-            # If parent is provided, add as child of parent
             parent_item.addChild(item)
         else:
-            # No parent item provided, add at top level
             self.goal_tree.addTopLevelItem(item)
-        
-        # Apply visual indication for a goal with subgoals
-        font = item.font(0)
-        if any(g['parent_id'] == goal['id'] for g in self.goals):
-            font.setBold(True)
-            item.setFont(0, font)
-        
+            
         return item
         
     def addSubGoalsToTreeOptimized(self, parent_id, parent_item, added_goal_ids=None, goal_progress=None):
@@ -2504,9 +2520,16 @@ class GoalWidget(QWidget):
                     self.parent.cursor.execute("ALTER TABLE goals ADD COLUMN created_date TEXT")
                     self.parent.conn.commit()
                 
+                # Check if color column exists, if not add it
+                try:
+                    self.parent.cursor.execute("SELECT color FROM goals LIMIT 1")
+                except:
+                    self.parent.cursor.execute("ALTER TABLE goals ADD COLUMN color TEXT")
+                    self.parent.conn.commit()
+                
                 # Execute SQL to get all goals
                 self.parent.cursor.execute("""
-                    SELECT id, title, parent_id, created_date, due_date, due_time, priority, completed 
+                    SELECT id, title, parent_id, created_date, due_date, due_time, priority, color, completed 
                     FROM goals
                     ORDER BY due_date
                 """)
@@ -2527,7 +2550,8 @@ class GoalWidget(QWidget):
                         'due_date': row[4],
                         'due_time': row[5],
                         'priority': row[6],
-                        'completed': bool(row[7])
+                        'color': row[7],
+                        'completed': bool(row[8])
                     }
                     self.goals.append(goal)
                 
@@ -2542,44 +2566,129 @@ class GoalWidget(QWidget):
             self.addSampleGoals()
     
     def addSampleGoals(self):
-        """Add sample goals for testing."""
-        # Add sample goals
-        self.goals = [
-            {
-                'id': 1,
-                'parent_id': None,
-                'title': 'Learn Python',
-                'created_date': '2023-01-01',
-                'due_date': '2023-12-31',
-                'due_time': '23:59',
-                'priority': 2,
-                'completed': False
-            },
-            {
-                'id': 2,
-                'parent_id': 1,
-                'title': 'Complete Python Tutorial',
-                'created_date': '2023-01-15',
-                'due_date': '2023-06-30',
-                'due_time': '23:59',
-                'priority': 1,
-                'completed': True
-            },
-            {
-                'id': 3,
-                'parent_id': 1,
-                'title': 'Build a Python Project',
-                'created_date': '2023-07-01',
-                'due_date': '2023-09-30',
-                'due_time': '23:59',
-                'priority': 1,
-                'completed': False
-            }
+        """Add some sample goals for testing."""
+        # Clear existing goals first
+        self.goals = []
+        
+        # Sample color palette
+        sample_colors = [
+            "#4F46E5",  # Indigo
+            "#10B981",  # Emerald
+            "#F59E0B",  # Amber
+            "#EF4444",  # Red
+            "#3B82F6",  # Blue
+            "#8B5CF6",  # Violet
+            "#EC4899",  # Pink
+            "#06B6D4",  # Cyan
         ]
         
-        # Refresh the tree with these goals
-        self.refreshGoalTree()
+        # Add main goals
+        main_goal_1 = {
+            'id': 1,
+            'title': "Complete Phase 1 of Project",
+            'parent_id': None,
+            'created_date': (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d"),
+            'due_date': (datetime.now() + timedelta(days=20)).strftime("%Y-%m-%d"),
+            'due_time': "17:00",
+            'priority': 2,  # High
+            'color': sample_colors[0],
+            'completed': False
+        }
         
+        main_goal_2 = {
+            'id': 2,
+            'title': "Website Redesign",
+            'parent_id': None,
+            'created_date': (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d"),
+            'due_date': (datetime.now() + timedelta(days=15)).strftime("%Y-%m-%d"),
+            'due_time': "12:00",
+            'priority': 1,  # Medium
+            'color': sample_colors[2],
+            'completed': False
+        }
+        
+        main_goal_3 = {
+            'id': 3,
+            'title': "Learn Python Basics",
+            'parent_id': None,
+            'created_date': (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"),
+            'due_date': (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d"),
+            'due_time': "16:00",
+            'priority': 0,  # Low
+            'color': sample_colors[4],
+            'completed': True
+        }
+        
+        # Add sub-goals
+        sub_goal_1 = {
+            'id': 4,
+            'title': "Research Requirements",
+            'parent_id': 1,
+            'created_date': (datetime.now() - timedelta(days=8)).strftime("%Y-%m-%d"),
+            'due_date': (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d"),
+            'due_time': "15:00",
+            'priority': 1,  # Medium
+            'color': sample_colors[1],
+            'completed': True
+        }
+        
+        sub_goal_2 = {
+            'id': 5,
+            'title': "Create Mockups",
+            'parent_id': 1,
+            'created_date': (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d"),
+            'due_date': (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"),
+            'due_time': "12:00",
+            'priority': 2,  # High
+            'color': sample_colors[3],
+            'completed': False
+        }
+        
+        sub_goal_3 = {
+            'id': 6,
+            'title': "Implement Frontend",
+            'parent_id': 2,
+            'created_date': (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d"),
+            'due_date': (datetime.now() + timedelta(days=10)).strftime("%Y-%m-%d"),
+            'due_time': "14:00",
+            'priority': 2,  # High
+            'color': sample_colors[5],
+            'completed': False
+        }
+        
+        sub_goal_4 = {
+            'id': 7,
+            'title': "Fix Bugs",
+            'parent_id': 2,
+            'created_date': (datetime.now() + timedelta(days=10)).strftime("%Y-%m-%d"),
+            'due_date': (datetime.now() + timedelta(days=15)).strftime("%Y-%m-%d"),
+            'due_time': "17:00",
+            'priority': 0,  # Low
+            'color': sample_colors[6],
+            'completed': False
+        }
+        
+        sub_goal_5 = {
+            'id': 8,
+            'title': "Learn Variables and Types",
+            'parent_id': 3,
+            'created_date': (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"),
+            'due_date': (datetime.now() - timedelta(days=25)).strftime("%Y-%m-%d"),
+            'due_time': "10:00",
+            'priority': 0,  # Low
+            'color': sample_colors[7],
+            'completed': True
+        }
+        
+        # Add all goals to our list
+        self.goals.extend([
+            main_goal_1, main_goal_2, main_goal_3,
+            sub_goal_1, sub_goal_2, sub_goal_3, sub_goal_4, sub_goal_5
+        ])
+        
+        # Refresh the tree
+        self.refreshGoalTree()
+    
     def selectGoalById(self, goal_id):
         """Find and select a goal by its ID in the goal tree.
         

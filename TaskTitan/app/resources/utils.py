@@ -3,12 +3,18 @@ Utility functions for handling resources in TaskTitan.
 """
 
 import os
+import sys
 import darkdetect
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont, QPalette, QColor
 
-# Constants
-RESOURCES_DIR = os.path.dirname(os.path.abspath(__file__))
+# Constants - Handle PyInstaller's frozen state
+if getattr(sys, 'frozen', False):
+    # Running as PyInstaller executable
+    RESOURCES_DIR = os.path.join(sys._MEIPASS, 'app', 'resources')
+else:
+    # Running as script
+    RESOURCES_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def get_resource_path(relative_path):
     """
@@ -48,6 +54,15 @@ def load_stylesheet(stylesheet_name):
     except (FileNotFoundError, IOError):
         return ""
 
+def get_themes_dir():
+    """Get the themes directory path, handling PyInstaller frozen state."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller executable
+        return os.path.join(sys._MEIPASS, 'app', 'themes')
+    else:
+        # Running as script
+        return os.path.join(os.path.dirname(os.path.dirname(RESOURCES_DIR)), 'themes')
+
 def apply_theme(app, use_dark_theme=None):
     """
     Apply a theme to the application.
@@ -64,15 +79,19 @@ def apply_theme(app, use_dark_theme=None):
         use_dark_theme = is_dark_mode()
     
     try:
+        themes_dir = get_themes_dir()
         # Choose the appropriate stylesheet
         if use_dark_theme:
-            # First check if dark_theme.py is actually a .py file or a .qss file
-            if os.path.exists("app/themes/dark_theme.qss"):
-                with open("app/themes/dark_theme.qss", "r") as f:
+            # First check if dark_theme.py is actually a .qss file or a .py file
+            dark_qss_path = os.path.join(themes_dir, 'dark_theme.qss')
+            dark_py_path = os.path.join(themes_dir, 'dark_theme.py')
+            
+            if os.path.exists(dark_qss_path):
+                with open(dark_qss_path, "r", encoding="utf-8") as f:
                     stylesheet_content = f.read()
-            else:
+            elif os.path.exists(dark_py_path):
                 # If it's a .py file, we need to get the string content from it, not execute it
-                with open("app/themes/dark_theme.py", "r") as f:
+                with open(dark_py_path, "r", encoding="utf-8") as f:
                     stylesheet_content = f.read()
                 # Remove Python code if present, keep only the string content
                 if "'''" in stylesheet_content or '"""' in stylesheet_content:
@@ -81,9 +100,15 @@ def apply_theme(app, use_dark_theme=None):
                     match = re.search(r'(\'\'\'|""")(.+?)(\'\'\'|""")', stylesheet_content, re.DOTALL)
                     if match:
                         stylesheet_content = match.group(2)
+            else:
+                stylesheet_content = ""
         else:
-            with open("app/themes/style.qss", "r") as f:
-                stylesheet_content = f.read()
+            style_qss_path = os.path.join(themes_dir, 'style.qss')
+            if os.path.exists(style_qss_path):
+                with open(style_qss_path, "r", encoding="utf-8") as f:
+                    stylesheet_content = f.read()
+            else:
+                stylesheet_content = ""
         
         # Apply the stylesheet
         app.setStyleSheet(stylesheet_content)
