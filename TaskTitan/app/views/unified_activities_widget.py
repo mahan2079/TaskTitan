@@ -8,15 +8,17 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                             QListWidgetItem, QDialog, QLineEdit, QTimeEdit, 
                             QComboBox, QDialogButtonBox, QMessageBox, QCheckBox,
                             QDateEdit, QTabWidget, QSplitter, QSizePolicy, QMenu,
-                            QGraphicsDropShadowEffect, QColorDialog, QCalendarWidget)
-from PyQt6.QtCore import Qt, pyqtSignal, QDate, QTime, QSize, QPoint, QEvent, QDateTime
-from PyQt6.QtGui import QIcon, QFont, QColor, QAction, QCursor
+                            QGraphicsDropShadowEffect, QColorDialog, QCalendarWidget,
+                            QListWidget, QAbstractItemView, QApplication)
+from PyQt6.QtCore import Qt, pyqtSignal, QDate, QTime, QSize, QPoint, QPointF, QEvent, QDateTime, QRect
+from PyQt6.QtGui import QIcon, QFont, QColor, QAction, QCursor, QPainter, QPen, QMouseEvent
 from datetime import datetime
 import random
 
 from app.resources import get_icon
 from app.models.activities_manager import ActivitiesManager
 from app.models.template_manager import TemplateManager
+from app.views.todo_item_dialog import TodoItemDialog
 
 class ActivityItemWidget(QWidget):
     """A unified widget for displaying activities (events, tasks, habits)."""
@@ -73,29 +75,76 @@ class ActivityItemWidget(QWidget):
         self.setMinimumHeight(120)  # Much smaller height
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
-        # Install event filter for mouse press
-        self.installEventFilter(self)
-        
         # Set up the UI components
         self.setupUI()
         
         # Apply shadow effect
         self.applyShadowEffect()
         
-    def eventFilter(self, obj, event):
-        """Filter events for this widget."""
-        if obj is self and event.type() == QEvent.Type.MouseButtonPress:
-            if event.button() == Qt.MouseButton.LeftButton:
-                self.onMousePress(event)
-            elif event.button() == Qt.MouseButton.RightButton:
-                # Handle right click (already handled by custom context menu)
-                pass
-            return True
-        return super().eventFilter(obj, event)
-        
-    def onMousePress(self, event):
+    def mousePressEvent(self, event):
         """Handle mouse press events - emit signal when the widget is clicked."""
-        self.activityClicked.emit(self.activity_data)
+        # Check if we have a checkbox and if the click is on it
+        if hasattr(self, 'checkbox'):
+            # Check if click is within checkbox bounds
+            checkbox_rect = self.checkbox.geometry()
+            if checkbox_rect.contains(event.pos()):
+                # Map the event position to checkbox coordinates and forward to checkbox
+                checkbox_pos = self.checkbox.mapFromParent(event.pos())
+                # Create a new event with the mapped position (convert QPoint to QPointF)
+                checkbox_event = QMouseEvent(
+                    event.type(),
+                    QPointF(checkbox_pos),
+                    event.button(),
+                    event.buttons(),
+                    event.modifiers()
+                )
+                # Let the checkbox handle the event
+                self.checkbox.mousePressEvent(checkbox_event)
+                event.accept()
+                return
+        
+        # Get the widget at the click position using global coordinates
+        global_pos = self.mapToGlobal(event.pos())
+        widget_at_pos = QApplication.widgetAt(global_pos)
+        
+        # Check if the click is on a checkbox, button, or their children
+        if widget_at_pos:
+            # Walk up the parent chain to see if we hit a checkbox or button
+            check_widget = widget_at_pos
+            while check_widget:
+                # Check for standard QCheckBox, QPushButton, or our custom checkbox
+                if isinstance(check_widget, (QCheckBox, QPushButton)) or check_widget == getattr(self, 'checkbox', None):
+                    # This is a checkbox or button - let it handle the event normally
+                    super().mousePressEvent(event)
+                    return
+                if check_widget == self:
+                    # We've reached our widget, stop searching
+                    break
+                check_widget = check_widget.parent()
+        
+        # Also check using childAt as a fallback
+        child_widget = self.childAt(event.pos())
+        if child_widget:
+            # Check if it's the checkbox or a standard widget type
+            if isinstance(child_widget, (QCheckBox, QPushButton)) or child_widget == getattr(self, 'checkbox', None):
+                # Let the child widget handle it
+                super().mousePressEvent(event)
+                return
+            # Check parent chain
+            parent = child_widget.parent()
+            while parent and parent != self:
+                if isinstance(parent, (QCheckBox, QPushButton)) or parent == getattr(self, 'checkbox', None):
+                    # Let the parent widget handle it
+                    super().mousePressEvent(event)
+                    return
+                parent = parent.parent()
+        
+        # Not clicking on a checkbox or button, handle the click ourselves
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.activityClicked.emit(self.activity_data)
+        else:
+            # For other buttons, use default handling
+            super().mousePressEvent(event)
         
     def onContextMenuRequested(self, pos):
         """Handle right-click context menu requests."""
@@ -122,13 +171,74 @@ class ActivityItemWidget(QWidget):
         
         self.main_layout.addWidget(self.color_bar)
         
-        # Checkbox for completion status
-        self.checkbox = QCheckBox()
-        self.checkbox.setChecked(self.completed)
-        self.checkbox.setObjectName("activityCheckbox")
-        self.checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Custom checkbox widget that paints checkmark when checked
+        class CheckboxWithCheckmark(QWidget):
+            toggled = pyqtSignal(bool)  # Define signal at class level
+            
+            def __init__(self, checked=False, parent=None):
+                super().__init__(parent)
+                self._checked = checked
+                self.setFixedSize(24, 24)
+                self.setCursor(Qt.CursorShape.PointingHandCursor)
+                self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+                # Ensure the widget can receive mouse events
+                self.setAttribute(Qt.WidgetAttribute.WA_MouseTracking, False)
+                self.setMouseTracking(False)
+            
+            def setChecked(self, checked):
+                # Always update the state, even if it's the same, to ensure consistency
+                old_checked = self._checked
+                self._checked = bool(checked)  # Ensure it's a boolean
+                # Force immediate repaint to show visual change
+                self.update()
+                self.repaint()
+                # Only emit signal if state actually changed
+                if old_checked != self._checked:
+                    self.toggled.emit(self._checked)
+            
+            def isChecked(self):
+                return self._checked
+            
+            def mousePressEvent(self, event):
+                if event.button() == Qt.MouseButton.LeftButton:
+                    # Toggle the state
+                    new_state = not self._checked
+                    self.setChecked(new_state)
+                    event.accept()
+                else:
+                    super().mousePressEvent(event)
+            
+            def paintEvent(self, event):
+                painter = QPainter(self)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                
+                # Draw checkbox box
+                rect = QRect(2, 2, 20, 20)
+                if self._checked:
+                    # Checked state: blue background
+                    painter.setBrush(QColor("#6366F1"))
+                    painter.setPen(QPen(QColor("#6366F1"), 2))
+                else:
+                    # Unchecked state: white background with gray border
+                    painter.setBrush(QColor("white"))
+                    painter.setPen(QPen(QColor("#CBD5E1"), 2))
+                
+                painter.drawRoundedRect(rect, 4, 4)
+                
+                # Draw checkmark if checked - make it more visible
+                if self._checked:
+                    painter.setPen(QPen(QColor("white"), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                    # Draw checkmark using lines (✓ shape) - centered and more prominent
+                    check_x = 2 + 5
+                    check_y = 2 + 10
+                    # First line: bottom-left to middle
+                    painter.drawLine(check_x, check_y, check_x + 5, check_y + 7)
+                    # Second line: middle to top-right
+                    painter.drawLine(check_x + 5, check_y + 7, check_x + 11, check_y - 3)
+        
+        # Create custom checkbox
+        self.checkbox = CheckboxWithCheckmark(self.completed, self)
         self.checkbox.toggled.connect(self.onCompletionToggled)
-        self.checkbox.setFixedSize(24, 24)  # Smaller checkbox
         self.main_layout.addWidget(self.checkbox)
         
         # Activity type icon
@@ -284,8 +394,35 @@ class ActivityItemWidget(QWidget):
         # Update widget style
         self.updateStyle()
         
+        # Force repaint to show strikethrough line
+        self.update()
+        self.repaint()
+        
         # Emit signal with the activity ID, current status, and type
         self.activityCompleted.emit(self.activity_id, checked, self.activity_type)
+    
+    def paintEvent(self, event):
+        """Override paintEvent to draw strikethrough line when completed."""
+        super().paintEvent(event)
+        
+        # Draw a strikethrough line across the entire widget if completed
+        if self.completed:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Draw a diagonal line from top-left to bottom-right
+            # Use a semi-transparent color that stands out
+            pen = QPen(QColor(100, 100, 100, 200), 2)  # Gray with some transparency
+            painter.setPen(pen)
+            
+            # Draw line across the widget
+            margin = 10
+            painter.drawLine(
+                margin, 
+                self.height() // 2,
+                self.width() - margin,
+                self.height() // 2
+            )
     
     def applyShadowEffect(self):
         """Apply shadow effect to the widget."""
@@ -450,10 +587,22 @@ class ActivityAddEditDialog(QDialog):
         
         self.edit_mode = edit_mode
         self.activity_data = activity_data or {}
+        self.activity_id = activity_data.get('id') if activity_data else None
+        
+        # Get activities_manager from parent
+        self.activities_manager = None
+        if parent and hasattr(parent, 'activities_manager'):
+            self.activities_manager = parent.activities_manager
+        elif parent and hasattr(parent, 'parent') and hasattr(parent.parent, 'activities_manager'):
+            self.activities_manager = parent.parent.activities_manager
+        
+        # Store todo items temporarily (will be saved when activity is saved)
+        self.todo_items = []  # List of (item_id, text, completed) tuples
         
         # Set dialog title
         self.setWindowTitle("Add Activity" if not edit_mode else "Edit Activity")
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(600)
         
         # Default color
         self.current_color = QColor(self.activity_data.get('color', "#6366F1"))
@@ -461,9 +610,10 @@ class ActivityAddEditDialog(QDialog):
         # Set up the UI
         self.setupUI()
         
-        # If in edit mode, populate fields
+        # If in edit mode, populate fields and load todo items
         if edit_mode and activity_data:
             self.populateFields()
+            self.loadTodoItems()
     
     def setupUI(self):
         """Set up the UI components."""
@@ -604,9 +754,39 @@ class ActivityAddEditDialog(QDialog):
         
         layout.addWidget(self.habit_days_container)
         
+        # Todo List Section
+        self.todo_section = QFrame()
+        self.todo_section.setFrameShape(QFrame.Shape.StyledPanel)
+        todo_layout = QVBoxLayout(self.todo_section)
+        todo_layout.setContentsMargins(10, 10, 10, 10)
+        todo_layout.setSpacing(10)
+        
+        # Todo section header
+        todo_header = QHBoxLayout()
+        todo_title = QLabel("Todo Items:")
+        todo_title.setStyleSheet("font-weight: bold; font-size: 14px;")
+        todo_header.addWidget(todo_title)
+        todo_header.addStretch()
+        
+        # Add todo button
+        self.add_todo_btn = QPushButton("+ Add Todo")
+        self.add_todo_btn.setMaximumWidth(100)
+        self.add_todo_btn.clicked.connect(self.addTodoItem)
+        todo_header.addWidget(self.add_todo_btn)
+        todo_layout.addLayout(todo_header)
+        
+        # Todo list widget
+        self.todo_list = QListWidget()
+        self.todo_list.setMaximumHeight(200)
+        self.todo_list.setAlternatingRowColors(True)
+        self.todo_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        todo_layout.addWidget(self.todo_list)
+        
+        layout.addWidget(self.todo_section)
+        
         # Button box
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        button_box.accepted.connect(self.accept)
+        button_box.accepted.connect(self.onAccept)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
         
@@ -651,6 +831,9 @@ class ActivityAddEditDialog(QDialog):
         
         # Show color selector for all activity types
         self.color_container.setVisible(True)
+        
+        # Todo section is always visible (works for all activity types)
+        # It's already added in setupUI, no need to recreate it here
     
     def populateFields(self):
         """Populate fields with existing data for editing."""
@@ -739,6 +922,142 @@ class ActivityAddEditDialog(QDialog):
             data['days_of_week'] = ','.join(selected_days)
         
         return data
+    
+    def loadTodoItems(self):
+        """Load existing todo items for the activity being edited."""
+        if not self.activities_manager or not self.activity_id:
+            return
+        
+        try:
+            todo_items = self.activities_manager.get_todo_items(self.activity_id)
+            self.todo_items = list(todo_items)  # Store as list of tuples
+            self.refreshTodoList()
+        except Exception as e:
+            print(f"Error loading todo items: {e}")
+    
+    def refreshTodoList(self):
+        """Refresh the todo list display."""
+        self.todo_list.clear()
+        for idx, (item_id, text, completed) in enumerate(self.todo_items):
+            item = QListWidgetItem()
+            # Create a widget for the todo item
+            todo_widget = QWidget()
+            todo_layout = QHBoxLayout(todo_widget)
+            todo_layout.setContentsMargins(5, 5, 5, 5)
+            
+            # Checkbox
+            checkbox = QCheckBox()
+            checkbox.setChecked(bool(completed))
+            # Use a lambda that captures item_id and index properly
+            def make_toggle_handler(tid, index):
+                return lambda state: self.toggleTodoItem(tid, state, index)
+            checkbox.stateChanged.connect(make_toggle_handler(item_id, idx))
+            todo_layout.addWidget(checkbox)
+            
+            # Text label
+            label = QLabel(text)
+            if completed:
+                label.setStyleSheet("text-decoration: line-through; color: #9CA3AF;")
+            todo_layout.addWidget(label, 1)
+            
+            # Edit button
+            edit_btn = QPushButton("Edit")
+            edit_btn.setMaximumWidth(50)
+            # Use a closure function to properly capture item_id and index
+            def make_edit_handler(tid, index):
+                return lambda checked=False: self.editTodoItem(tid, index)
+            edit_btn.clicked.connect(make_edit_handler(item_id, idx))
+            todo_layout.addWidget(edit_btn)
+            
+            # Delete button
+            delete_btn = QPushButton("Delete")
+            delete_btn.setMaximumWidth(60)
+            # Use a closure function to properly capture item_id and index
+            def make_delete_handler(tid, index):
+                return lambda checked=False: self.deleteTodoItem(tid, index)
+            delete_btn.clicked.connect(make_delete_handler(item_id, idx))
+            todo_layout.addWidget(delete_btn)
+            
+            item.setSizeHint(todo_widget.sizeHint())
+            self.todo_list.addItem(item)
+            self.todo_list.setItemWidget(item, todo_widget)
+    
+    def addTodoItem(self):
+        """Add a new todo item."""
+        dialog = TodoItemDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            text = dialog.get_text()
+            if text:
+                # Add to temporary list (will be saved when activity is saved)
+                # Use None as item_id for new items
+                self.todo_items.append((None, text, False))
+                self.refreshTodoList()
+    
+    def editTodoItem(self, item_id, index=None):
+        """Edit an existing todo item."""
+        # Use index if provided (for new items with None id), otherwise find by item_id
+        if index is not None and index < len(self.todo_items):
+            idx = index
+        else:
+            # Find the todo item by id
+            idx = None
+            for i, (tid, text, completed) in enumerate(self.todo_items):
+                if tid == item_id:
+                    idx = i
+                    break
+        
+        if idx is not None and idx < len(self.todo_items):
+            tid, text, completed = self.todo_items[idx]
+            dialog = TodoItemDialog(self, text)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                new_text = dialog.get_text()
+                if new_text:
+                    self.todo_items[idx] = (tid, new_text, completed)
+                    self.refreshTodoList()
+    
+    def deleteTodoItem(self, item_id, index=None):
+        """Delete a todo item."""
+        # Use index if provided (for new items with None id), otherwise find by item_id
+        if index is not None and index < len(self.todo_items):
+            # Remove by index
+            self.todo_items.pop(index)
+        else:
+            # Remove by item_id
+            self.todo_items = [(tid, text, completed) for tid, text, completed in self.todo_items if tid != item_id]
+        self.refreshTodoList()
+    
+    def toggleTodoItem(self, item_id, state, index=None):
+        """Toggle the completion status of a todo item."""
+        # Use index if provided (for new items with None id), otherwise find by item_id
+        if index is not None and index < len(self.todo_items):
+            idx = index
+        else:
+            # Find the todo item by id
+            idx = None
+            for i, (tid, text, completed) in enumerate(self.todo_items):
+                if tid == item_id:
+                    idx = i
+                    break
+        
+        if idx is not None and idx < len(self.todo_items):
+            tid, text, completed = self.todo_items[idx]
+            # CheckState.Checked is 2, CheckState.Unchecked is 0
+            is_checked = state == Qt.CheckState.Checked.value
+            self.todo_items[idx] = (tid, text, is_checked)
+            self.refreshTodoList()
+    
+    def onAccept(self):
+        """Handle accept button - save todo items before accepting."""
+        # Accept the dialog first
+        self.accept()
+        
+        # Note: Todo items will be saved by the caller after the activity is created/updated
+        # We return the todo items data so the caller can save them
+        return True
+    
+    def getTodoItems(self):
+        """Get the todo items data to be saved."""
+        return self.todo_items
 
 
 class OverlapConflictDialog(QDialog):
@@ -1636,13 +1955,19 @@ class UnifiedActivitiesWidget(QWidget):
         self.scroll_area.verticalScrollBar().setValue(0)
     
     def loadActivitiesFromDatabase(self):
-        """Load all activities from the database."""
+        """Load activities from the database for the current date."""
         if not hasattr(self, 'activities_manager'):
             return
             
         try:
-            # Get all activities from the database
-            self.activities = self.activities_manager.get_all_activities()
+            # Get activities for the current date - this includes date-specific completion status
+            # We need to get all activities first, then filter by date with proper completion status
+            # For now, get all activities but we'll use get_activities_for_date in refreshActivitiesList
+            # to ensure completion status is correct
+            all_activities = self.activities_manager.get_all_activities()
+            
+            # Store all activities for filtering, but we'll get date-specific completion in refreshActivitiesList
+            self.activities = all_activities
             
             # Update the current date label
             if self.current_date == QDate.currentDate():
@@ -1650,7 +1975,7 @@ class UnifiedActivitiesWidget(QWidget):
             else:
                 self.date_label.setText(self.current_date.toString("dddd, MMMM d, yyyy"))
             
-            # Refresh the activities list
+            # Refresh the activities list - this will use get_activities_for_date for proper completion status
             self.refreshActivitiesList()
         except Exception as e:
             print(f"Error loading activities: {e}")
@@ -1776,7 +2101,18 @@ class UnifiedActivitiesWidget(QWidget):
         dialog = ActivityAddEditDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             activity_data = dialog.getActivityData()
-            self.addActivity(activity_data)
+            activity_id = self.addActivity(activity_data)
+            
+            # Save todo items if any were added
+            if activity_id and hasattr(dialog, 'getTodoItems'):
+                todo_items = dialog.getTodoItems()
+                if todo_items and self.activities_manager:
+                    for item_id, text, completed in todo_items:
+                        # item_id will be None for new items
+                        new_todo_id = self.activities_manager.add_todo_item(activity_id, text)
+                        # If it was marked as completed, update it
+                        if completed and new_todo_id:
+                            self.activities_manager.update_todo_item(new_todo_id, text, True)
     
     def showEditActivityDialog(self, activity_id, activity_type):
         """Show the dialog to edit an activity."""
@@ -1809,6 +2145,35 @@ class UnifiedActivitiesWidget(QWidget):
                 updated_data = dialog.getActivityData()
                 self.updateActivity(activity_id, activity_type, updated_data)
                 
+                # Save todo items
+                if hasattr(dialog, 'getTodoItems') and self.activities_manager:
+                    todo_items = dialog.getTodoItems()
+                    
+                    # Get existing todo items from database
+                    existing_todos = {item[0]: item for item in self.activities_manager.get_todo_items(activity_id)}
+                    
+                    # Process todo items
+                    current_todo_ids = set()
+                    for item_id, text, completed in todo_items:
+                        if item_id is None:
+                            # New item - add it
+                            new_id = self.activities_manager.add_todo_item(activity_id, text)
+                            if completed and new_id:
+                                self.activities_manager.update_todo_item(new_id, text, True)
+                        else:
+                            # Existing item - update it
+                            current_todo_ids.add(item_id)
+                            existing_item = existing_todos.get(item_id)
+                            if existing_item:
+                                # Update if text or completion status changed
+                                if existing_item[1] != text or bool(existing_item[2]) != completed:
+                                    self.activities_manager.update_todo_item(item_id, text, completed)
+                    
+                    # Delete items that were removed
+                    for existing_id in existing_todos.keys():
+                        if existing_id not in current_todo_ids:
+                            self.activities_manager.delete_todo_item(existing_id)
+                
                 # If this is an event, make sure the calendar is updated
                 if activity_type == 'event':
                     self.syncWithCalendar()
@@ -1838,11 +2203,34 @@ class UnifiedActivitiesWidget(QWidget):
         # Set completed to False for the new copy
         new_activity['completed'] = False
         
+        # Load original todo items to include in the dialog
+        original_todos = []
+        if self.activities_manager:
+            original_todos = self.activities_manager.get_todo_items(activity_id)
+            # Convert to format expected by dialog (item_id will be None for new items when duplicating)
+            new_activity['_todo_items'] = [(None, text, completed) for item_id, text, completed in original_todos]
+        
         # Open the edit dialog with the duplicated data
         dialog = ActivityAddEditDialog(self, new_activity, edit_mode=False)
+        
+        # Pre-populate todo items in dialog if we have them
+        if original_todos and hasattr(dialog, 'todo_items'):
+            dialog.todo_items = [(None, text, completed) for item_id, text, completed in original_todos]
+            dialog.refreshTodoList()
+        
         if dialog.exec() == QDialog.DialogCode.Accepted:
             activity_data = dialog.getActivityData()
-            self.addActivity(activity_data)
+            activity_id = self.addActivity(activity_data)
+            
+            # Save todo items from dialog
+            if activity_id and hasattr(dialog, 'getTodoItems'):
+                todo_items = dialog.getTodoItems()
+                if todo_items and self.activities_manager:
+                    for item_id, text, completed in todo_items:
+                        # item_id will be None for new items
+                        new_todo_id = self.activities_manager.add_todo_item(activity_id, text)
+                        if completed and new_todo_id:
+                            self.activities_manager.update_todo_item(new_todo_id, text, True)
             
     def rescheduleActivity(self, activity_id, activity_type):
         """Reschedule an existing activity to a different date."""
@@ -2108,20 +2496,61 @@ class UnifiedActivitiesWidget(QWidget):
                     current_date
                 )
                 
+                # Ensure database changes are committed immediately
+                if success and hasattr(self.activities_manager, 'conn'):
+                    try:
+                        self.activities_manager.conn.commit()
+                    except Exception as e:
+                        print(f"Error committing completion change: {e}")
+                
                 if success:
                     # Update our local data
                     activity['completed'] = new_status
                     
-                    # Refresh the UI
-                    self.refreshActivitiesList()
+                    # Update the widget directly instead of refreshing the whole list
+                    widget_key = f"{activity_type}_{activity_id}"
+                    if widget_key in self.activity_widgets:
+                        widget = self.activity_widgets[widget_key]
+                        # Update widget's completed state first
+                        widget.completed = new_status
+                        
+                        if hasattr(widget, 'checkbox'):
+                            # Block signals to prevent recursive updates
+                            if hasattr(widget.checkbox, 'blockSignals'):
+                                widget.checkbox.blockSignals(True)
+                            # Update checkbox state - ensure it's set as boolean
+                            if hasattr(widget.checkbox, 'setChecked'):
+                                widget.checkbox.setChecked(bool(new_status))
+                            # Unblock signals
+                            if hasattr(widget.checkbox, 'blockSignals'):
+                                widget.checkbox.blockSignals(False)
+                        
+                        # Update widget style and trigger repaint
+                        if hasattr(widget, 'updateStyle'):
+                            widget.updateStyle()
+                        # Force widget and checkbox repaint to show changes
+                        widget.update()
+                        widget.repaint()
+                        if hasattr(widget, 'checkbox'):
+                            widget.checkbox.update()
+                            widget.checkbox.repaint()
+                    else:
+                        # Widget doesn't exist, refresh the list
+                        self.refreshActivitiesList()
                     
                     # If this is an event, make sure the calendar is updated
                     if activity_type == 'event':
                         self.syncWithCalendar()
                     
                     # Also refresh the weekly plan view if it exists
+                    # BUT don't let it refresh us back, as we've already updated the widget
                     if hasattr(self.parent, 'weekly_plan_view') and self.parent.weekly_plan_view:
-                        self.parent.weekly_plan_view.refresh()
+                        # Temporarily disable refresh to prevent circular refresh
+                        self._prevent_refresh = True
+                        try:
+                            self.parent.weekly_plan_view.refresh()
+                        finally:
+                            self._prevent_refresh = False
                     
                     # Emit a signal that activity was completed (if applicable)
                     if hasattr(self, 'activityCompleted'):
@@ -2129,6 +2558,14 @@ class UnifiedActivitiesWidget(QWidget):
                         self.activityCompleted.emit(int(activity_id), bool(new_status), str(activity_type))
                         
                 break
+    
+    def refresh(self):
+        """Refresh the activities view - but preserve widget states if possible."""
+        # If we're in the middle of updating a widget, don't refresh
+        if hasattr(self, '_prevent_refresh') and self._prevent_refresh:
+            return
+        # Otherwise, reload from database
+        self.loadActivitiesFromDatabase()
     
     def refreshActivitiesList(self):
         """Refresh the list of activities for the current date."""
@@ -2152,48 +2589,25 @@ class UnifiedActivitiesWidget(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         
-        # Filter activities by type and current date
-        filtered_activities = []
-        current_date_str = self.current_date.toString("yyyy-MM-dd")
-        current_day_name = self.current_date.toString("dddd")  # e.g., "Monday"
+        # Get activities for the current date with proper completion status
+        # This uses get_activities_for_date which joins with activity_completions
+        try:
+            date_activities = self.activities_manager.get_activities_for_date(self.current_date)
+        except Exception as e:
+            print(f"Error getting activities for date: {e}")
+            date_activities = []
         
-        for activity in self.activities:
-            # First check if the activity type is enabled in filters
+        # Filter activities by type (get_activities_for_date already filtered by date)
+        filtered_activities = []
+        
+        for activity in date_activities:
+            # Check if the activity type is enabled in filters
             if not self.filter_settings.get(activity['type'], True):
                 continue
             
-            # Special handling for habits - check days of week
-            if activity['type'] == 'habit' and 'days_of_week' in activity:
-                days_of_week = activity.get('days_of_week', '')
-                if days_of_week and current_day_name in days_of_week.split(','):
-                    filtered_activities.append(activity)
-                    continue
-            
-            # Regular date comparison for tasks and events
-            activity_date = activity.get('date')
-            if activity_date:
-                # Handle QDate objects
-                if hasattr(activity_date, 'toString'):
-                    activity_date_str = activity_date.toString("yyyy-MM-dd")
-                # Handle string dates
-                elif isinstance(activity_date, str):
-                    # Try to convert to QDate for proper comparison
-                    try:
-                        qdate = QDate.fromString(activity_date, "yyyy-MM-dd")
-                        if qdate.isValid():
-                            activity_date_str = activity_date
-                        else:
-                            # Skip invalid dates
-                            continue
-                    except:
-                        activity_date_str = activity_date
-                else:
-                    # Skip if date format is unknown
-                    continue
-                    
-                # Check if date matches current date
-                if activity_date_str == current_date_str:
-                    filtered_activities.append(activity)
+            # All activities from get_activities_for_date are already for the current date
+            # so we can add them directly
+            filtered_activities.append(activity)
         
         # Sort by time
         filtered_activities.sort(key=lambda x: (
@@ -2356,8 +2770,9 @@ class UnifiedActivitiesWidget(QWidget):
             # Add to layout
             self.activities_layout.addWidget(widget)
             
-            # Store a reference to the widget by ID
-            self.activity_widgets[activity_id] = widget
+            # Store a reference to the widget by type and ID (matching lookup format)
+            widget_key = f"{activity_type}_{activity_id}"
+            self.activity_widgets[widget_key] = widget
             
         except Exception as e:
             print(f"Error adding activity widget: {e}")

@@ -31,37 +31,10 @@ class DailyPlanView(QWidget):
 
     def setupUI(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        header_frame = QFrame(objectName="dailyHeader")
-        header_frame.setProperty("data-card", "true")
-        header_frame.setFixedHeight(70)
-        header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(15, 5, 15, 5)
-
-        prev_day_btn = QPushButton("◀ Previous Day")
-        prev_day_btn.clicked.connect(self.previousDay)
-        header_layout.addWidget(prev_day_btn)
-
-        self.day_label = QLabel()
-        self.day_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.day_label.setObjectName("dailyDayLabel")
-        self.updateDayLabel()
-        header_layout.addWidget(self.day_label, 1)
-
-        next_day_btn = QPushButton("Next Day ▶")
-        next_day_btn.clicked.connect(self.nextDay)
-        header_layout.addWidget(next_day_btn)
-
-        today_btn = QPushButton("Today")
-        today_icon = get_icon("calendar-today")
-        if not today_icon.isNull():
-            today_btn.setIcon(today_icon)
-        today_btn.clicked.connect(self.goToToday)
-        header_layout.addWidget(today_btn)
-
-        main_layout.addWidget(header_frame)
+        # No header here - it will be in the parent's header
 
         self.view = QGraphicsView()
         self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -79,7 +52,11 @@ class DailyPlanView(QWidget):
         main_layout.addWidget(self.view, 1)
 
     def updateDayLabel(self):
-        self.day_label.setText(self.current_date.toString("dddd, MMMM d, yyyy"))
+        date_text = self.current_date.toString("dddd, MMMM d, yyyy")
+        # Update parent header label if available
+        # Daily view's parent is WeeklyPlanView, which has parent as main window
+        if hasattr(self.parent, 'parent') and hasattr(self.parent.parent, 'day_label'):
+            self.parent.parent.day_label.setText(date_text)
 
     def previousDay(self):
         self.current_date = self.current_date.addDays(-1)
@@ -108,7 +85,7 @@ class DailyPlanView(QWidget):
         
         # Set scene rect to cover the full grid for proper scrolling
         # Calculate grid dimensions
-        hour_height = 180
+        hour_height = 300
         grid_height = 24 * hour_height
         day_width = max(self.view.width() - 120, 800)
         hour_label_width = 90
@@ -125,7 +102,7 @@ class DailyPlanView(QWidget):
             self.view.setSceneRect(combined_rect.adjusted(-20, -20, 20, 20))
 
     def drawDayGrid(self):
-        hour_height = 180
+        hour_height = 300
         grid_height = 24 * hour_height
         day_width = max(self.view.width() - 120, 800)  # Minimum width for better display
 
@@ -260,7 +237,7 @@ class DailyPlanView(QWidget):
             self.scene.addItem(now_label)
 
     def addActivitiesToGrid(self):
-        hour_height = 180
+        hour_height = 300
         day_width = max(self.view.width() - 120, 800)
         hour_label_width = 90
 
@@ -401,33 +378,87 @@ class DailyPlanView(QWidget):
             todo_items = self.activities_manager.get_todo_items(activity.get('id'))
             
             if todo_items:
-                # Calculate grid layout: 2 columns for better fit
-                items_per_row = 2
-                todo_item_height = 22
+                # Calculate grid layout: 3 columns
+                items_per_row = 3
                 todo_item_spacing = 4
-                todo_item_width = (actual_width - 16 - todo_item_spacing) // items_per_row
+                todo_item_width = (actual_width - 16 - (items_per_row - 1) * todo_item_spacing) // items_per_row
                 
-                # Calculate how many rows fit
-                available_height = y_pos + height - content_start_y - 10
-                max_rows = int(available_height / (todo_item_height + todo_item_spacing))
-                max_items = max_rows * items_per_row
+                # Calculate dynamic height for each todo item based on text length
+                checkbox_size = 14
+                text_margin = 6
+                min_todo_height = 22
                 
-                # Limit items shown
-                items_to_show = min(len(todo_items), max_items)
+                # First pass: calculate heights for all items
+                item_heights = []
+                max_text_width = todo_item_width - checkbox_size - text_margin - 8
                 
-                for idx, (item_id, text, completed) in enumerate(todo_items[:items_to_show]):
-                    if idx >= max_items:
-                        break
+                for item_id, text, completed in todo_items:
+                    # Create a temporary text item to measure height
+                    temp_text = QGraphicsTextItem(text)
+                    temp_text.setTextWidth(max_text_width)
+                    temp_font = temp_text.font()
+                    temp_font.setPointSize(8)
+                    temp_text.setFont(temp_font)
+                    text_height = temp_text.boundingRect().height()
                     
+                    # Calculate item height (text height + padding)
+                    todo_item_height = max(min_todo_height, int(text_height) + 8)
+                    item_heights.append(todo_item_height)
+                
+                # Second pass: calculate positions with proper row alignment
+                todo_positions = []
+                row_heights = {}  # Track max height per row
+                current_y = content_start_y + 4
+                
+                for idx, (item_id, text, completed) in enumerate(todo_items):
                     # Calculate grid position
                     row = idx // items_per_row
                     col = idx % items_per_row
                     
                     todo_x = actual_x + 8 + col * (todo_item_width + todo_item_spacing)
-                    todo_y = content_start_y + 4 + row * (todo_item_height + todo_item_spacing)
+                    todo_item_height = item_heights[idx]
                     
+                    # If this is the start of a new row, calculate row start position
+                    if col == 0:
+                        if row > 0:
+                            # Use the maximum height from the previous row
+                            prev_row_height = row_heights.get(row - 1, min_todo_height)
+                            current_y += prev_row_height + todo_item_spacing
+                    
+                    # Track the maximum height for this row
+                    if row not in row_heights:
+                        row_heights[row] = todo_item_height
+                    else:
+                        row_heights[row] = max(row_heights[row], todo_item_height)
+                    
+                    todo_y = current_y
+                    
+                    # Check if we have enough space
                     if todo_y + todo_item_height > y_pos + height - 10:
                         break  # Not enough space
+                    
+                    # Store position info
+                    todo_positions.append({
+                        'item_id': item_id,
+                        'text': text,
+                        'completed': completed,
+                        'x': todo_x,
+                        'y': todo_y,
+                        'width': todo_item_width,
+                        'height': todo_item_height,
+                        'row': row,
+                        'col': col
+                    })
+                
+                # Now render all the todo items
+                for pos in todo_positions:
+                    todo_x = pos['x']
+                    todo_y = pos['y']
+                    todo_item_width = pos['width']
+                    todo_item_height = pos['height']
+                    item_id = pos['item_id']
+                    text = pos['text']
+                    completed = pos['completed']
                     
                     # Todo item background
                     todo_bg = QGraphicsRectItem(todo_x, todo_y, todo_item_width, todo_item_height)
@@ -443,7 +474,6 @@ class DailyPlanView(QWidget):
                     self.scene.addItem(todo_bg)
                     
                     # Completion checkbox indicator (clickable)
-                    checkbox_size = 14
                     checkbox_x = todo_x + 4
                     checkbox_y = todo_y + 4
                     
@@ -484,15 +514,11 @@ class DailyPlanView(QWidget):
                         checkmark.setCursor(Qt.CursorShape.PointingHandCursor)
                         self.scene.addItem(checkmark)
                     
-                    # Todo text (truncate to fit in grid cell)
-                    display_text = text
-                    max_text_width = todo_item_width - checkbox_size - 12
-                    if len(display_text) > 20:  # Approximate character limit
-                        display_text = display_text[:17] + "..."
-                    
-                    todo_text = QGraphicsTextItem(display_text)
-                    todo_text.setPos(checkbox_x + checkbox_size + 6, todo_y + 3)
-                    todo_text.setTextWidth(max_text_width)
+                    # Todo text - show full text with word wrapping
+                    max_text_width = todo_item_width - checkbox_size - text_margin - 8
+                    todo_text = QGraphicsTextItem(text)
+                    todo_text.setPos(checkbox_x + checkbox_size + text_margin, todo_y + 4)
+                    todo_text.setTextWidth(max_text_width)  # Enable word wrapping
                     if completed:
                         todo_text.setDefaultTextColor(QColor("#D1D5DB"))
                     else:
@@ -513,33 +539,45 @@ class DailyPlanView(QWidget):
                     self.scene.addItem(todo_text)
                 
                 # Update content_start_y for "Add Todo" button
-                rows_used = (items_to_show + items_per_row - 1) // items_per_row
-                content_start_y = content_start_y + rows_used * (todo_item_height + todo_item_spacing) + 4
+                if todo_positions:
+                    # Find the maximum y position of all todo items
+                    max_y = max(pos['y'] + pos['height'] for pos in todo_positions)
+                    content_start_y = max_y + todo_item_spacing
+                else:
+                    content_start_y = content_start_y
 
-            # Add "Add Todo" button if there's space
-            if content_start_y + 30 < y_pos + height:
-                add_todo_bg = QGraphicsRectItem(actual_x + 8, content_start_y, actual_width - 16, 24)
-                add_todo_bg.setPen(QPen(QColor(255, 255, 255, 150), 1.5, Qt.PenStyle.DashLine))
-                add_todo_bg.setBrush(QBrush(QColor(255, 255, 255, 20)))
-                add_todo_bg.setZValue(1.8)
-                add_todo_bg.setData(0, activity.get('id'))
-                add_todo_bg.setAcceptHoverEvents(True)
-                add_todo_bg.setCursor(Qt.CursorShape.PointingHandCursor)
-                self.scene.addItem(add_todo_bg)
-                
-                add_todo_text = QGraphicsTextItem("+ Add Todo Item")
-                add_todo_text.setPos(actual_x + (actual_width - add_todo_text.boundingRect().width()) / 2, 
-                                    content_start_y + 4)
-                add_todo_text.setDefaultTextColor(QColor("#FFFFFF"))
-                add_todo_font = add_todo_text.font()
-                add_todo_font.setPointSize(9)
-                add_todo_font.setItalic(True)
-                add_todo_text.setFont(add_todo_font)
-                add_todo_text.setZValue(2)
-                add_todo_text.setData(0, activity.get('id'))
-                add_todo_text.setAcceptHoverEvents(True)
-                add_todo_text.setCursor(Qt.CursorShape.PointingHandCursor)
-                self.scene.addItem(add_todo_text)
+            # Always add "Add Todo" button - make it more compact if space is limited
+            button_height = 24
+            if content_start_y + button_height + 4 > y_pos + height:
+                # If space is very limited, place button at the bottom with minimal padding
+                button_y = y_pos + height - button_height - 4
+            else:
+                button_y = content_start_y
+            
+            add_todo_bg = QGraphicsRectItem(actual_x + 8, button_y, actual_width - 16, button_height)
+            add_todo_bg.setPen(QPen(QColor(255, 255, 255, 150), 1.5, Qt.PenStyle.DashLine))
+            add_todo_bg.setBrush(QBrush(QColor(255, 255, 255, 20)))
+            add_todo_bg.setZValue(1.8)
+            add_todo_bg.setData(0, activity.get('id'))
+            add_todo_bg.setData(1, "add_todo_button")  # Mark as add todo button
+            add_todo_bg.setAcceptHoverEvents(True)
+            add_todo_bg.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.scene.addItem(add_todo_bg)
+            
+            add_todo_text = QGraphicsTextItem("+ Add Todo Item")
+            add_todo_text.setPos(actual_x + (actual_width - add_todo_text.boundingRect().width()) / 2, 
+                                button_y + 4)
+            add_todo_text.setDefaultTextColor(QColor("#FFFFFF"))
+            add_todo_font = add_todo_text.font()
+            add_todo_font.setPointSize(9)
+            add_todo_font.setItalic(True)
+            add_todo_text.setFont(add_todo_font)
+            add_todo_text.setZValue(2)
+            add_todo_text.setData(0, activity.get('id'))
+            add_todo_text.setData(1, "add_todo_button")  # Mark as add todo button
+            add_todo_text.setAcceptHoverEvents(True)
+            add_todo_text.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.scene.addItem(add_todo_text)
 
             # Store reference to the activity
             self.activity_items[activity.get('id')] = {
@@ -665,7 +703,7 @@ class DailyPlanView(QWidget):
                         return
                 
                 # Check for "Add Todo" button clicks
-                if isinstance(item, (QGraphicsRectItem, QGraphicsTextItem)) and item.data(0) and not item.data(1):
+                if isinstance(item, (QGraphicsRectItem, QGraphicsTextItem)) and item.data(1) == "add_todo_button":
                     # This is the add todo button
                     activity_id = item.data(0)
                     if event.button() == Qt.MouseButton.LeftButton:
@@ -705,9 +743,18 @@ class DailyPlanView(QWidget):
                 # Check if it's a path item (activity rectangle)
                 if isinstance(item, QGraphicsPathItem) and item.data(0):
                     activity_id = item.data(0)
-                    self.activityClicked.emit(self.get_activity_by_id(activity_id))
-                    event.accept()
-                    return
+                    # Left double-click or Ctrl+click to add todo directly
+                    if event.button() == Qt.MouseButton.LeftButton:
+                        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                            # Ctrl+click to add todo
+                            self.addTodoItem(activity_id)
+                            event.accept()
+                            return
+                        else:
+                            # Normal click - emit activity clicked signal
+                            self.activityClicked.emit(self.get_activity_by_id(activity_id))
+                            event.accept()
+                            return
             
             event.accept()
         except Exception as e:
@@ -762,15 +809,17 @@ class DailyPlanView(QWidget):
                 msg.exec()
 
     def showContextMenu(self, event):
-        """Show context menu for adding todo items to an activity."""
+        """Show context menu for activities with options to add todo items and view details."""
         pos = event.scenePos()
         items = self.scene.items(pos)
         
         activity_id = None
+        activity = None
         for item in items:
             # Check if it's a path item (activity rectangle)
             if isinstance(item, QGraphicsPathItem) and item.data(0):
                 activity_id = item.data(0)
+                activity = self.get_activity_by_id(activity_id)
                 break
         
         if activity_id is None:
@@ -778,6 +827,10 @@ class DailyPlanView(QWidget):
         
         menu = QMenu()
         add_todo_action = menu.addAction("➕ Add Todo Item")
+        menu.addSeparator()
+        
+        # Add option to view activity details
+        view_action = menu.addAction("👁️ View Details")
         
         # Convert scene position to global screen position
         view_pos = self.view.mapFromScene(pos)
@@ -787,6 +840,9 @@ class DailyPlanView(QWidget):
         
         if action == add_todo_action:
             self.addTodoItem(activity_id)
+        elif action == view_action:
+            # Emit signal to view activity details
+            self.activityClicked.emit(activity)
 
     def addTodoToTimeSlot(self, hour):
         """Add a todo item to a specific time slot (hour)."""

@@ -457,58 +457,22 @@ class WeeklyPlanView(QWidget):
     def setupUI(self):
         """Set up the user interface components."""
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
         # Clear base inline styles so theme can take over
         self.setStyleSheet("")
 
-        # Add a fancy header with gradient background
-        header_frame = QFrame(objectName="weeklyHeader")
-        header_frame.setProperty("data-card", "true")
-        header_frame.setFixedHeight(70)
-        header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(15, 5, 15, 5)
-
-        # Title and navigation
-        nav_layout = QHBoxLayout()
-
-        # Week navigation buttons
-        prev_week_btn = QPushButton("◀ Previous Week")
-        prev_week_btn.clicked.connect(self.previousWeek)
-        header_layout.addWidget(prev_week_btn)
-
-        # Week display
+        # No header here - it will be in the parent's header
+        # Store references for parent to access
         self.week_label = QLabel()
-        self.week_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.week_label.setObjectName("weeklyWeekLabel")
         self.updateWeekLabel()
-        header_layout.addWidget(self.week_label, 1)
-
-        # Next week button
-        next_week_btn = QPushButton("Next Week ▶")
-        next_week_btn.clicked.connect(self.nextWeek)
-        header_layout.addWidget(next_week_btn)
-
-        # Today button with calendar icon
-        today_btn = QPushButton("Today")
-        today_icon = get_icon("calendar-today")
-        if not today_icon.isNull():
-            today_btn.setIcon(today_icon)
-        else:
-            today_btn.setText("📅 Today")
-        # Themed by global QSS
-        today_btn.setStyleSheet("")
-        today_btn.clicked.connect(self.goToCurrentWeek)
-        header_layout.addWidget(today_btn)
         
-        # View toggle button
+        # View toggle button - will be added to parent header
         self.view_toggle_btn = QPushButton("Daily View")
         self.view_toggle_btn.setCheckable(True)
         self.view_toggle_btn.clicked.connect(self.toggleView)
-        header_layout.addWidget(self.view_toggle_btn)
-
-        main_layout.addWidget(header_frame)
 
         # Controls panel (reduced height) - only visible in weekly view
         self.controls_panel = QFrame()
@@ -591,18 +555,35 @@ class WeeklyPlanView(QWidget):
         self.stacked_widget.addWidget(self.daily_view)
 
     def toggleView(self):
-        if self.view_toggle_btn.isChecked():
-            # Show daily view
-            self.view_toggle_btn.setText("Weekly View")
-            self.stacked_widget.setCurrentWidget(self.daily_view)
-            # Hide zoom controls for daily view
-            self.controls_panel.setVisible(False)
-        else:
-            # Show weekly view
-            self.view_toggle_btn.setText("Daily View")
+        # Check current view state and toggle
+        current_widget = self.stacked_widget.currentWidget()
+        if current_widget == self.daily_view:
+            # Currently showing daily view, switch to weekly
             self.stacked_widget.setCurrentWidget(self.weekly_view_widget)
-            # Show zoom controls for weekly view
             self.controls_panel.setVisible(True)
+            # Update button text in parent header if available
+            if hasattr(self.parent, 'view_toggle_btn'):
+                self.parent.view_toggle_btn.setText("Daily View")
+                self.parent.view_toggle_btn.setChecked(False)
+            if hasattr(self.parent, 'daily_view_toggle_btn'):
+                self.parent.daily_view_toggle_btn.setText("Daily View")
+                self.parent.daily_view_toggle_btn.setChecked(False)
+        else:
+            # Currently showing weekly view, switch to daily
+            self.stacked_widget.setCurrentWidget(self.daily_view)
+            self.controls_panel.setVisible(False)
+            # Update button text in parent header if available
+            if hasattr(self.parent, 'view_toggle_btn'):
+                self.parent.view_toggle_btn.setText("Weekly View")
+                self.parent.view_toggle_btn.setChecked(True)
+            if hasattr(self.parent, 'daily_view_toggle_btn'):
+                self.parent.daily_view_toggle_btn.setText("Weekly View")
+                self.parent.daily_view_toggle_btn.setChecked(True)
+        
+        # Notify parent to update navigation visibility
+        if hasattr(self.parent, 'updateNavigationVisibility'):
+            from app.resources.constants import WEEKLY_PLAN_VIEW
+            self.parent.updateNavigationVisibility(WEEKLY_PLAN_VIEW)
     
     def getStartOfWeek(self, date):
         """Get the first day (Monday) of the week containing the given date."""
@@ -618,14 +599,16 @@ class WeeklyPlanView(QWidget):
         
         if start_month == end_month:
             # Same month
-            self.week_label.setText(
-                f"{start_month} {self.current_week_start.toString('d')} - {week_end.toString('d')}, {week_end.toString('yyyy')}"
-            )
+            week_text = f"{start_month} {self.current_week_start.toString('d')} - {week_end.toString('d')}, {week_end.toString('yyyy')}"
         else:
             # Different months
-            self.week_label.setText(
-                f"{start_month} {self.current_week_start.toString('d')} - {end_month} {week_end.toString('d')}, {week_end.toString('yyyy')}"
-            )
+            week_text = f"{start_month} {self.current_week_start.toString('d')} - {end_month} {week_end.toString('d')}, {week_end.toString('yyyy')}"
+        
+        self.week_label.setText(week_text)
+        
+        # Update parent header label if available
+        if hasattr(self.parent, 'week_label'):
+            self.parent.week_label.setText(week_text)
     
     def handleZoomSlider(self, value):
         """Handle zoom slider changes."""
@@ -754,7 +737,7 @@ class WeeklyPlanView(QWidget):
         """Draw the weekly grid with day columns and hour rows."""
         # Constants for grid
         day_width = 150  # Width of each day column
-        hour_height = 180  # Height of each hour row (increased from 60 to 120)
+        hour_height = 300  # Height of each hour row (increased for better visibility)
         grid_height = 24 * hour_height  # 24 hours
         grid_width = 7 * day_width  # 7 days
         
@@ -944,7 +927,7 @@ class WeeklyPlanView(QWidget):
         
         # Constants
         day_width = 150  # Width of each day column
-        hour_height = 180  # Height of each hour row
+        hour_height = 300  # Height of each hour row
         hour_label_width = 90  # Width of the time axis
         
         # Group activities by day for better overlap handling

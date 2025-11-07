@@ -122,6 +122,101 @@ class TaskTitanApp(QMainWindow):
         title = QLabel("TaskTitan")
         title.setObjectName("headerTitle")
         header_layout.addWidget(title)
+        
+        # Navigation controls container (for daily/weekly plan views)
+        self.nav_controls_container = QWidget()
+        self.nav_controls_container.setObjectName("navControlsContainer")
+        nav_layout = QHBoxLayout(self.nav_controls_container)
+        nav_layout.setContentsMargins(20, 0, 20, 0)
+        nav_layout.setSpacing(12)
+        
+        # Daily view navigation
+        self.daily_nav_container = QWidget()
+        self.daily_nav_container.setObjectName("dailyNavContainer")
+        daily_nav_layout = QHBoxLayout(self.daily_nav_container)
+        daily_nav_layout.setContentsMargins(0, 0, 0, 0)
+        daily_nav_layout.setSpacing(8)
+        
+        self.prev_day_btn = QPushButton("◀ Previous Day")
+        self.prev_day_btn.setObjectName("navButton")
+        self.prev_day_btn.clicked.connect(self.onPreviousDay)
+        daily_nav_layout.addWidget(self.prev_day_btn)
+        
+        self.day_label = QLabel()
+        self.day_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.day_label.setObjectName("dailyDayLabel")
+        self.day_label.setMinimumWidth(250)
+        daily_nav_layout.addWidget(self.day_label)
+        
+        self.next_day_btn = QPushButton("Next Day ▶")
+        self.next_day_btn.setObjectName("navButton")
+        self.next_day_btn.clicked.connect(self.onNextDay)
+        daily_nav_layout.addWidget(self.next_day_btn)
+        
+        self.today_btn = QPushButton("Today")
+        today_icon = get_icon("calendar-today")
+        if not today_icon.isNull():
+            self.today_btn.setIcon(today_icon)
+        self.today_btn.setObjectName("navButton")
+        self.today_btn.clicked.connect(self.onGoToToday)
+        daily_nav_layout.addWidget(self.today_btn)
+        
+        # View toggle button (also in daily view to switch back to weekly)
+        self.daily_view_toggle_btn = QPushButton("Weekly View")
+        self.daily_view_toggle_btn.setCheckable(True)
+        self.daily_view_toggle_btn.setChecked(True)  # Checked when in daily view
+        self.daily_view_toggle_btn.setObjectName("navButton")
+        self.daily_view_toggle_btn.clicked.connect(self.onToggleView)
+        daily_nav_layout.addWidget(self.daily_view_toggle_btn)
+        
+        # Weekly view navigation
+        self.weekly_nav_container = QWidget()
+        self.weekly_nav_container.setObjectName("weeklyNavContainer")
+        weekly_nav_layout = QHBoxLayout(self.weekly_nav_container)
+        weekly_nav_layout.setContentsMargins(0, 0, 0, 0)
+        weekly_nav_layout.setSpacing(8)
+        
+        self.prev_week_btn = QPushButton("◀ Previous Week")
+        self.prev_week_btn.setObjectName("navButton")
+        self.prev_week_btn.clicked.connect(self.onPreviousWeek)
+        weekly_nav_layout.addWidget(self.prev_week_btn)
+        
+        self.week_label = QLabel()
+        self.week_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.week_label.setObjectName("weeklyWeekLabel")
+        self.week_label.setMinimumWidth(250)
+        weekly_nav_layout.addWidget(self.week_label)
+        
+        self.next_week_btn = QPushButton("Next Week ▶")
+        self.next_week_btn.setObjectName("navButton")
+        self.next_week_btn.clicked.connect(self.onNextWeek)
+        weekly_nav_layout.addWidget(self.next_week_btn)
+        
+        self.today_week_btn = QPushButton("Today")
+        today_week_icon = get_icon("calendar-today")
+        if not today_week_icon.isNull():
+            self.today_week_btn.setIcon(today_week_icon)
+        self.today_week_btn.setObjectName("navButton")
+        self.today_week_btn.clicked.connect(self.onGoToCurrentWeek)
+        weekly_nav_layout.addWidget(self.today_week_btn)
+        
+        # View toggle button (for weekly plan view)
+        self.view_toggle_btn = QPushButton("Daily View")
+        self.view_toggle_btn.setCheckable(True)
+        self.view_toggle_btn.setObjectName("navButton")
+        self.view_toggle_btn.clicked.connect(self.onToggleView)
+        weekly_nav_layout.addWidget(self.view_toggle_btn)
+        
+        # Add both nav containers to main nav layout
+        nav_layout.addWidget(self.daily_nav_container)
+        nav_layout.addWidget(self.weekly_nav_container)
+        
+        # Initially hide navigation controls
+        self.nav_controls_container.hide()
+        self.daily_nav_container.hide()
+        self.weekly_nav_container.hide()
+        
+        header_layout.addWidget(self.nav_controls_container)
         header_layout.addStretch()
 
         self.search_field = SearchLineEdit(self)
@@ -198,6 +293,9 @@ class TaskTitanApp(QMainWindow):
         self.sidebarButtons[0].setProperty("data-selected", True)
         self.sidebarButtons[0].style().unpolish(self.sidebarButtons[0])
         self.sidebarButtons[0].style().polish(self.sidebarButtons[0])
+        
+        # Initialize navigation visibility
+        self.updateNavigationVisibility(0)
 
         # Keyboard shortcuts
         self._installShortcuts()
@@ -557,8 +655,110 @@ class TaskTitanApp(QMainWindow):
             button.setProperty("data-selected", i == index)
             button.style().unpolish(button)
             button.style().polish(button)
+        
+        # Show/hide navigation controls based on current view
+        self.updateNavigationVisibility(index)
 
         return None
+    
+    def updateNavigationVisibility(self, page_index):
+        """Update navigation controls visibility based on current page."""
+        from app.resources.constants import WEEKLY_PLAN_VIEW
+        
+        if page_index == WEEKLY_PLAN_VIEW:
+            # Show navigation controls for weekly plan view
+            self.nav_controls_container.show()
+            # Check if we're in daily or weekly view within weekly plan
+            if hasattr(self, 'weekly_plan_view') and hasattr(self.weekly_plan_view, 'stacked_widget'):
+                if self.weekly_plan_view.stacked_widget.currentWidget() == self.weekly_plan_view.daily_view:
+                    # Show daily navigation
+                    self.daily_nav_container.show()
+                    self.weekly_nav_container.hide()
+                    # Sync day label
+                    if hasattr(self.weekly_plan_view.daily_view, 'current_date'):
+                        self.day_label.setText(self.weekly_plan_view.daily_view.current_date.toString("dddd, MMMM d, yyyy"))
+                    # Update toggle button state
+                    if hasattr(self, 'daily_view_toggle_btn'):
+                        self.daily_view_toggle_btn.setChecked(True)
+                        self.daily_view_toggle_btn.setText("Weekly View")
+                    if hasattr(self, 'view_toggle_btn'):
+                        self.view_toggle_btn.setChecked(True)
+                        self.view_toggle_btn.setText("Weekly View")
+                else:
+                    # Show weekly navigation
+                    self.daily_nav_container.hide()
+                    self.weekly_nav_container.show()
+                    # Sync week label - update it first if needed
+                    if hasattr(self.weekly_plan_view, 'updateWeekLabel'):
+                        self.weekly_plan_view.updateWeekLabel()
+                    elif hasattr(self.weekly_plan_view, 'week_label'):
+                        self.week_label.setText(self.weekly_plan_view.week_label.text())
+                    # Update toggle button state
+                    if hasattr(self, 'daily_view_toggle_btn'):
+                        self.daily_view_toggle_btn.setChecked(False)
+                        self.daily_view_toggle_btn.setText("Daily View")
+                    if hasattr(self, 'view_toggle_btn'):
+                        self.view_toggle_btn.setChecked(False)
+                        self.view_toggle_btn.setText("Daily View")
+        else:
+            # Hide navigation controls for other views
+            self.nav_controls_container.hide()
+    
+    def onPreviousDay(self):
+        """Handle previous day button click."""
+        if hasattr(self, 'weekly_plan_view') and hasattr(self.weekly_plan_view, 'daily_view'):
+            self.weekly_plan_view.daily_view.previousDay()
+            # Update label
+            if hasattr(self.weekly_plan_view.daily_view, 'current_date'):
+                self.day_label.setText(self.weekly_plan_view.daily_view.current_date.toString("dddd, MMMM d, yyyy"))
+    
+    def onNextDay(self):
+        """Handle next day button click."""
+        if hasattr(self, 'weekly_plan_view') and hasattr(self.weekly_plan_view, 'daily_view'):
+            self.weekly_plan_view.daily_view.nextDay()
+            # Update label
+            if hasattr(self.weekly_plan_view.daily_view, 'current_date'):
+                self.day_label.setText(self.weekly_plan_view.daily_view.current_date.toString("dddd, MMMM d, yyyy"))
+    
+    def onGoToToday(self):
+        """Handle today button click for daily view."""
+        if hasattr(self, 'weekly_plan_view') and hasattr(self.weekly_plan_view, 'daily_view'):
+            self.weekly_plan_view.daily_view.goToToday()
+            # Update label
+            if hasattr(self.weekly_plan_view.daily_view, 'current_date'):
+                self.day_label.setText(self.weekly_plan_view.daily_view.current_date.toString("dddd, MMMM d, yyyy"))
+    
+    def onPreviousWeek(self):
+        """Handle previous week button click."""
+        if hasattr(self, 'weekly_plan_view'):
+            self.weekly_plan_view.previousWeek()
+            # Update label
+            if hasattr(self.weekly_plan_view, 'week_label'):
+                self.week_label.setText(self.weekly_plan_view.week_label.text())
+    
+    def onNextWeek(self):
+        """Handle next week button click."""
+        if hasattr(self, 'weekly_plan_view'):
+            self.weekly_plan_view.nextWeek()
+            # Update label
+            if hasattr(self.weekly_plan_view, 'week_label'):
+                self.week_label.setText(self.weekly_plan_view.week_label.text())
+    
+    def onGoToCurrentWeek(self):
+        """Handle today button click for weekly view."""
+        if hasattr(self, 'weekly_plan_view'):
+            self.weekly_plan_view.goToCurrentWeek()
+            # Update label
+            if hasattr(self.weekly_plan_view, 'week_label'):
+                self.week_label.setText(self.weekly_plan_view.week_label.text())
+    
+    def onToggleView(self):
+        """Handle view toggle button click."""
+        if hasattr(self, 'weekly_plan_view'):
+            self.weekly_plan_view.toggleView()
+            # Update navigation visibility
+            from app.resources.constants import WEEKLY_PLAN_VIEW
+            self.updateNavigationVisibility(WEEKLY_PLAN_VIEW)
 
     def loadData(self):
         """Load activities and tasks from database and update UI."""

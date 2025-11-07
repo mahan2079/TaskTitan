@@ -1229,6 +1229,17 @@ class CalendarWithEventList(QWidget):
                     # Add ID to the data
                     activity_data['id'] = activity_id
                     
+                    # Save todo items if any were added
+                    if hasattr(dialog, 'getTodoItems'):
+                        todo_items = dialog.getTodoItems()
+                        if todo_items and self.main_window.activities_manager:
+                            for item_id, text, completed in todo_items:
+                                # item_id will be None for new items
+                                new_todo_id = self.main_window.activities_manager.add_todo_item(activity_id, text)
+                                # If it was marked as completed, update it
+                                if completed and new_todo_id:
+                                    self.main_window.activities_manager.update_todo_item(new_todo_id, text, True)
+                    
                     # 2. Add to calendar for immediate visual feedback
                     calendar_event = {
                         'id': activity_id,

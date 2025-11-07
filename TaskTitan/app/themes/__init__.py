@@ -70,6 +70,12 @@ def build_theme_qss(p: Dict[str, str]) -> str:
       background-color: {bg};
       color: {text};
     }}
+    
+    /* Labels - transparent background to blend with parent */
+    QLabel {{
+      background-color: transparent;
+      color: {text};
+    }}
 
     /* Toolbar */
     QToolBar {{
@@ -93,9 +99,9 @@ def build_theme_qss(p: Dict[str, str]) -> str:
     QPushButton:pressed {{ background-color: {press}; }}
     QPushButton:disabled {{ background-color: {_adjust(primary, 0.6)}; color: {_adjust(button_text, 1.1)}; }}
 
-    /* Inputs */
+    /* Inputs - transparent background to blend with parent container */
     QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QDateEdit, QTimeEdit, QSpinBox, QDoubleSpinBox {{
-      background-color: {surface};
+      background-color: transparent;
       color: {text};
       border: 1px solid {border};
       border-radius: 6px;
@@ -103,6 +109,7 @@ def build_theme_qss(p: Dict[str, str]) -> str:
     }}
     QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QDateEdit:focus, QTimeEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
       border: 1px solid {primary};
+      background-color: transparent;
     }}
     QComboBox QAbstractItemView {{
       background: {surface};
@@ -110,6 +117,10 @@ def build_theme_qss(p: Dict[str, str]) -> str:
       border: 1px solid {border};
       selection-background-color: {selection};
       selection-color: {selection_text};
+    }}
+    QComboBox::drop-down {{
+      background-color: transparent;
+      border: none;
     }}
 
     /* Menus */
@@ -139,7 +150,7 @@ def build_theme_qss(p: Dict[str, str]) -> str:
 
     /* Containers */
     QGroupBox {{ background: {surface}; border: 1px solid {border}; border-radius: 8px; margin-top: 12px; }}
-    QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 6px; color: {text}; }}
+    QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 6px; background-color: transparent; color: {text}; }}
     QScrollArea {{ background: {bg}; border: none; }}
     QStackedWidget {{ background: {bg}; }}
 
@@ -148,9 +159,29 @@ def build_theme_qss(p: Dict[str, str]) -> str:
     QProgressBar::chunk {{ background: {primary}; border-radius: 8px; }}
 
     /* Check / Radio */
-    QCheckBox, QRadioButton {{ color: {text}; }}
-    QCheckBox::indicator, QRadioButton::indicator {{ width: 18px; height: 18px; border: 1px solid {border}; border-radius: 4px; background: {surface}; }}
-    QCheckBox::indicator:checked, QRadioButton::indicator:checked {{ background: {primary}; border-color: {primary}; }}
+    QCheckBox, QRadioButton {{ 
+        color: {text}; 
+        spacing: 8px;
+    }}
+    QCheckBox::indicator, QRadioButton::indicator {{ 
+        width: 20px; 
+        height: 20px; 
+        border: 2px solid {border}; 
+        border-radius: 4px; 
+        background: {surface}; 
+    }}
+    QCheckBox::indicator:checked, QRadioButton::indicator:checked {{ 
+        background: {primary}; 
+        border-color: {primary}; 
+        image: none;
+    }}
+    QCheckBox::indicator:checked:disabled {{ 
+        background: {muted}; 
+        border-color: {muted}; 
+    }}
+    QCheckBox::indicator:hover {{
+        border-color: {primary};
+    }}
 
     /* Scrollbars */
     QScrollBar:vertical {{ background: {surface2}; width: 12px; margin: 0; border-radius: 6px; }}
@@ -172,8 +203,8 @@ def build_theme_qss(p: Dict[str, str]) -> str:
     *[data-card="true"] {{ background: {surface}; border: 1px solid {border}; border-radius: 12px; padding: 16px; }}
     /* Activity widgets */
     *[data-activity="true"][data-completed="true"] {{ opacity: 0.92; }}
-    *[data-activity="true"] QLabel#activityTitle {{ color: {text}; }}
-    *[data-activity="true"][data-completed="true"] QLabel#activityTitle {{ color: {muted}; text-decoration: line-through; }}
+    *[data-activity="true"] QLabel#activityTitle {{ background-color: transparent; color: {text}; }}
+    *[data-activity="true"][data-completed="true"] QLabel#activityTitle {{ background-color: transparent; color: {muted}; text-decoration: line-through; }}
     /* Activity type color bars */
     QFrame[data-activity-type="task"] {{ background: #ef4444; border-radius: 2px; }}
     QFrame[data-activity-type="event"] {{ background: {primary}; border-radius: 2px; }}
@@ -191,16 +222,62 @@ def build_theme_qss(p: Dict[str, str]) -> str:
     }}
     QWidget#sidebar QPushButton:hover {{ background: {surface2}; }}
     QWidget#sidebar QPushButton[data-selected="true"] {{ background: {primary}; color: {button_text}; }}
+    QWidget#sidebar QLabel {{
+      background-color: transparent;
+      color: {text};
+    }}
 
     /* Header bar */
     QWidget#headerBar {{ background: {surface}; border-bottom: 1px solid {border}; }}
-    QLabel#headerTitle {{ color: {text}; font-size: 18px; font-weight: 600; }}
-    QLineEdit#headerSearch {{ background: {surface2}; border: 1px solid {border}; border-radius: 6px; padding: 6px 10px; color: {text}; }}
+    QLabel#headerTitle {{ background-color: transparent; color: {text}; font-size: 18px; font-weight: 600; }}
+    QLineEdit#headerSearch {{ background-color: transparent; border: 1px solid {border}; border-radius: 6px; padding: 6px 10px; color: {text}; }}
+    
+    /* Navigation controls */
+    QWidget#navControlsContainer {{
+      background-color: transparent;
+    }}
+    QWidget#dailyNavContainer {{
+      background-color: transparent;
+    }}
+    QWidget#weeklyNavContainer {{
+      background-color: transparent;
+    }}
+    QPushButton#navButton {{
+      background-color: {surface2};
+      color: {text};
+      border: 1px solid {border};
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: 500;
+      min-width: 100px;
+    }}
+    QPushButton#navButton:hover {{
+      background-color: {hover};
+      border-color: {primary};
+    }}
+    QPushButton#navButton:pressed {{
+      background-color: {press};
+    }}
+    QLabel#dailyDayLabel {{
+      background-color: transparent;
+      color: {text};
+      font-size: 16px;
+      font-weight: 600;
+      padding: 8px 16px;
+    }}
+    QLabel#weeklyWeekLabel {{
+      background-color: transparent;
+      color: {text};
+      font-size: 16px;
+      font-weight: 600;
+      padding: 8px 16px;
+    }}
 
     /* Weekly plan */
     QWidget#weeklyHeader {{ background: {surface}; border: 1px solid {border}; border-radius: 10px; }}
-    QLabel#weeklyWeekLabel {{ color: {text}; font-size: 18px; font-weight: 600; }}
-    QLabel#weeklyStatus {{ color: {muted}; font-style: italic; }}
+    QLabel#weeklyWeekLabel {{ background-color: transparent; color: {text}; font-size: 18px; font-weight: 600; }}
+    QLabel#weeklyStatus {{ background-color: transparent; color: {muted}; font-style: italic; }}
     QGraphicsView {{ background: {bg}; border: 1px solid {border}; border-radius: 8px; }}
     
     /* Dialog components */
@@ -209,6 +286,7 @@ def build_theme_qss(p: Dict[str, str]) -> str:
       color: {text};
     }}
     QDialog QLabel {{
+      background-color: transparent;
       color: {text};
     }}
     QDialog QFrame {{
@@ -228,16 +306,19 @@ def build_theme_qss(p: Dict[str, str]) -> str:
       border: 1px solid {border};
     }}
     QDialog QLabel#title {{
+      background-color: transparent;
       color: {text};
       font-size: 18px;
       font-weight: bold;
     }}
     QDialog QLabel#subtitle {{
+      background-color: transparent;
       color: {muted};
       font-size: 16px;
       font-weight: bold;
     }}
     QDialog QLabel#sectionHeader {{
+      background-color: transparent;
       color: {text};
       font-size: 16px;
       font-weight: bold;
@@ -262,7 +343,7 @@ def build_theme_qss(p: Dict[str, str]) -> str:
     
     /* Template components */
     QComboBox#templateCombo {{
-      background-color: {surface};
+      background-color: transparent;
       color: {text};
       border: 1px solid {border};
       border-radius: 6px;
@@ -309,7 +390,12 @@ def build_theme_qss(p: Dict[str, str]) -> str:
       border-top-right-radius: 12px;
     }}
     QLabel#activitiesTitle {{
+      background-color: transparent;
       color: {text};
+    }}
+    QLabel#activitiesSubtitle {{
+      background-color: transparent;
+      color: {muted};
     }}
     QPushButton#filterButton {{
       background-color: {surface2};
@@ -346,6 +432,7 @@ def build_theme_qss(p: Dict[str, str]) -> str:
     
     /* Empty state */
     QLabel#emptyState {{
+      background-color: transparent;
       color: {muted};
     }}
     
@@ -359,7 +446,7 @@ def build_theme_qss(p: Dict[str, str]) -> str:
     
     /* Goal dialogs */
     QDialog QLineEdit, QDialog QDateEdit, QDialog QTimeEdit, QDialog QComboBox {{
-      background-color: {surface};
+      background-color: transparent;
       border: 1px solid {border};
       border-radius: 4px;
       padding: 6px;
@@ -386,6 +473,7 @@ def build_theme_qss(p: Dict[str, str]) -> str:
       border-bottom: 1px solid {border};
     }}
     QLabel#productivityTitle {{
+      background-color: transparent;
       color: {text};
       font-size: 18px;
       font-weight: 600;
@@ -397,6 +485,7 @@ def build_theme_qss(p: Dict[str, str]) -> str:
       padding: 16px;
     }}
     QLabel#trackingTime {{
+      background-color: transparent;
       color: {primary};
       font-size: 48px;
       font-weight: bold;
@@ -421,6 +510,42 @@ def build_theme_qss(p: Dict[str, str]) -> str:
     }}
     QTableWidget::item:alternate {{
       background-color: {surface2};
+    }}
+    
+    /* Pomodoro widget */
+    QLabel#pomodoroTitle {{
+      background-color: transparent;
+      color: {text};
+    }}
+    QLabel#pomodoroStateLabel {{
+      background-color: transparent;
+      color: {text};
+    }}
+    QLabel#pomodoroTimeDisplay {{
+      background-color: transparent;
+      color: {text};
+    }}
+    QWidget#pomodoroHeader {{
+      background: {surface};
+      border-bottom: 1px solid {border};
+    }}
+    QWidget#pomodoroHeader QLabel {{
+      background-color: transparent;
+      color: {text};
+    }}
+    
+    /* Daily Tracker */
+    QWidget#dailyTrackerHeader {{
+      background: {surface};
+      border-bottom: 1px solid {border};
+    }}
+    QLabel#dailyTrackerTitle {{
+      background-color: transparent;
+      color: {text};
+    }}
+    QWidget#dailyTrackerHeader QLabel {{
+      background-color: transparent;
+      color: {text};
     }}
     
     """
