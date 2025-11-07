@@ -11,7 +11,8 @@ from pathlib import Path
 block_cipher = None
 
 # Get the base directory (TaskTitan folder)
-base_dir = Path(__file__).parent.resolve()
+# When building, PyInstaller runs from the directory containing the spec file
+base_dir = Path(os.getcwd()).resolve()
 
 # Entry point - run.py is in the TaskTitan directory
 entry_script = str(base_dir / 'run.py')
@@ -66,6 +67,18 @@ a = Analysis(
         'xml',
         'html',
         'pdb',
+        'PyQt5',  # Exclude PyQt5 since we use PyQt6
+        'PyQt5.QtCore',
+        'PyQt5.QtGui',
+        'PyQt5.QtWidgets',
+        'PyQt5.QtSvg',
+        'PyQt5.QtSql',
+        'PySide6',  # Exclude PySide6 since we use PyQt6
+        'PySide6.QtCore',
+        'PySide6.QtGui',
+        'PySide6.QtWidgets',
+        'PySide6.QtSvg',
+        'PySide6.QtSql',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
