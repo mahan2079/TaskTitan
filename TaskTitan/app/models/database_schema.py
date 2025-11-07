@@ -37,6 +37,7 @@ CREATE_TABLES_SQL = {
             progress_type TEXT DEFAULT 'manual',  -- 'manual', 'tasks', 'time'
             target_value REAL,
             current_value REAL DEFAULT 0,
+            color TEXT,  -- Custom color for the goal (hex code)
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (parent_id) REFERENCES goals(id) ON DELETE CASCADE
@@ -84,6 +85,16 @@ CREATE_TABLES_SQL = {
             date DATE PRIMARY KEY,
             note TEXT
         )
+    """,
+
+    "todo_items": """
+        CREATE TABLE IF NOT EXISTS todo_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            activity_id INTEGER,
+            text TEXT NOT NULL,
+            completed INTEGER DEFAULT 0,
+            FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE
+        )
     """
 }
 
@@ -94,43 +105,35 @@ MIGRATION_SCRIPTS = [
     -- Create the activities table if it doesn't exist
     {CREATE_TABLES_SQL[activities]}
     
-    -- Migrate tasks to activities
-    INSERT INTO activities (
-        title, date, start_time, end_time, completed, type, 
-        priority, category, goal_id, created_at
-    )
-    SELECT 
-        description, due_date, due_time, 
-        CASE WHEN due_time IS NULL THEN '00:00' ELSE due_time END,
-        CASE WHEN due_time IS NULL THEN '01:00' ELSE time(due_time, '+1 hour') END,
-        completed, 'task', priority, 'Other', goal_id, CURRENT_TIMESTAMP
-    FROM tasks;
+    -- Commented out migration code that adds default activities
+    -- We don't want to automatically add activities from other tables
+    -- Only user-created activities should be shown
     
-    -- Migrate events to activities
-    INSERT INTO activities (
-        title, date, start_time, end_time, completed, type,
-        category, created_at
-    )
-    SELECT 
-        description, date, time, 
-        CASE WHEN time IS NULL THEN '00:00' ELSE time END,
-        CASE WHEN time IS NULL THEN '01:00' ELSE time(time, '+1 hour') END,
-        completed, 'event', 'Other', CURRENT_TIMESTAMP
-    FROM events;
+    -- REMOVED: Migrate tasks to activities
+    -- REMOVED: INSERT INTO activities statement
     
-    -- Migrate habits to activities
-    INSERT INTO activities (
-        title, date, start_time, end_time, completed, type,
-        days_of_week, category, created_at
-    )
-    SELECT 
-        name, created_at, time, 
-        CASE WHEN time IS NULL THEN '00:00' ELSE time END,
-        CASE WHEN time IS NULL THEN '01:00' ELSE time(time, '+30 minutes') END,
-        0, 'habit', days_of_week, 'Other', created_at
-    FROM habits;
+    -- REMOVED: Migrate events to activities
+    -- REMOVED: INSERT INTO activities statement
+    
+    -- REMOVED: Migrate habits to activities
+    -- REMOVED: INSERT INTO activities statement
+    """,
+    
+    # Migration 2: Add color field to goals table
+    """
+    -- Add color column to goals table if it doesn't exist
+    PRAGMA foreign_keys=off;
+    
+    BEGIN TRANSACTION;
+    
+    -- Add the color column if it doesn't exist
+    ALTER TABLE goals ADD COLUMN color TEXT;
+    
+    COMMIT;
+    
+    PRAGMA foreign_keys=on;
     """
 ]
 
 # Schema version tracking
-SCHEMA_VERSION = 1 
+SCHEMA_VERSION = 2 

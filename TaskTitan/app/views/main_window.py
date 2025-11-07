@@ -5,28 +5,48 @@ from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFrame,
     QLabel, QPushButton, QToolBar, QTabWidget, QScrollArea, QStackedWidget,
-    QGridLayout, QSizePolicy, QSpacerItem, QMenu, QCalendarWidget, QProgressBar
+    QGridLayout, QSizePolicy, QSpacerItem, QMenu, QCalendarWidget, QProgressBar, QLineEdit, QStatusBar, QDialog
 )
-from PyQt6.QtCore import Qt, QSize, QDate, QTime, QTimer, pyqtSignal, QPropertyAnimation, QRect, QRectF
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor, QFont, QPainter, QBrush, QPen
+from PyQt6.QtCore import Qt, QSize, QDate, QTime, QTimer, pyqtSignal, QPropertyAnimation, QRect, QRectF, QEasingCurve, QPoint
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor, QFont, QPainter, QBrush, QPen, QShortcut, QKeySequence
 import darkdetect
 import pyqtgraph as pg
 import sqlite3
-import logging
 
 from app.models.database import initialize_db
 from app.models.database_manager import get_manager, close_connection
+from app.controllers.search_manager import SearchManager, SearchResult
 from app.views.calendar_widget import ModernCalendarWidget, CalendarWithEventList
 from app.views.unified_activities_widget import UnifiedActivitiesWidget
 from app.views.goal_widget import GoalWidget
-from app.views.productivity_view import ProductivityView
+from app.views.productivity_view import DailyTrackerView
 from app.views.pomodoro_widget import PomodoroWidget
 from app.views.settings_dialog import SettingsDialog
 from app.views.weekly_plan_view import WeeklyPlanView
-from app.resources import get_icon, get_pixmap, VIEW_NAMES, DASHBOARD_VIEW, ACTIVITIES_VIEW, GOALS_VIEW, PRODUCTIVITY_VIEW, POMODORO_VIEW, WEEKLY_PLAN_VIEW, SETTINGS_VIEW
-
-# Import custom progress chart to avoid QRectF issues
+from app.views.search_results_widget import SearchResultsWidget
+from app.views.toast_notification import ToastManager, ToastType, show_toast
 from app.views.custom_progress import CircularProgressChart
+from app.resources import get_icon, get_pixmap, VIEW_NAMES, DASHBOARD_VIEW, ACTIVITIES_VIEW, GOALS_VIEW, PRODUCTIVITY_VIEW, POMODORO_VIEW, WEEKLY_PLAN_VIEW, SETTINGS_VIEW
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class SearchLineEdit(QLineEdit):
+    """Custom search line edit with focus handling."""
+    
+    def __init__(self, parent=None):
+        """Initialize the search line edit."""
+        super().__init__(parent)
+        self.parent_window = parent
+    
+    def focusOutEvent(self, event):
+        """Handle focus out event."""
+        super().focusOutEvent(event)
+        if self.parent_window and hasattr(self.parent_window, 'hideSearchResults'):
+            # Delay hiding to allow clicking on results
+            QTimer.singleShot(200, self.parent_window.hideSearchResults)
+
 
 class TaskTitanApp(QMainWindow):
     """Main application window for TaskTitan with modern UI."""
@@ -45,6 +65,17 @@ class TaskTitanApp(QMainWindow):
         from app.models.activities_manager import ActivitiesManager
         self.activities_manager = ActivitiesManager()
         self.activities_manager.set_connection(self.conn, self.cursor)
+        # Ensure unified activities tables exist
+        try:
+            self.activities_manager.create_tables()
+        except Exception as e:
+            logger.error(f"Error ensuring activities tables: {e}", exc_info=True)
+        
+        # Initialize search manager
+        self.search_manager = SearchManager(
+            db_manager=self.db_manager,
+            activities_manager=self.activities_manager
+        )
         
         # Set up window properties
         self.setWindowTitle("TaskTitan")
@@ -57,6 +88,11 @@ class TaskTitanApp(QMainWindow):
         self.refreshTimer = QTimer(self)
         self.refreshTimer.timeout.connect(self.refreshData)
         self.refreshTimer.start(60000)
+        
+        # Search debounce timer
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.timeout.connect(self.performSearch)
 
     def setupUI(self):
         """Set up the modern UI with dashboard layout."""
@@ -67,17 +103,57 @@ class TaskTitanApp(QMainWindow):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         
-        # Main layout with sidebar and content area
-        self.main_layout = QHBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(0)
+        # Build a header bar and a content row (sidebar + stack)
+        root_layout = QVBoxLayout(self.central_widget)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        header = QWidget()
+        header.setObjectName("headerBar")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(12, 8, 12, 8)
+
+        self.sidebar_toggle_btn = QPushButton("☰")
+        self.sidebar_toggle_btn.setFixedWidth(36)
+        self.sidebar_toggle_btn.clicked.connect(self.toggleSidebar)
+        self.sidebar_toggle_btn.setToolTip("Toggle sidebar (Ctrl+B)")
+        header_layout.addWidget(self.sidebar_toggle_btn)
+
+        title = QLabel("TaskTitan")
+        title.setObjectName("headerTitle")
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+
+        self.search_field = SearchLineEdit(self)
+        self.search_field.setObjectName("headerSearch")
+        self.search_field.setPlaceholderText("Search (Ctrl+K)…")
+        self.search_field.setFixedWidth(280)
+        self.search_field.setToolTip("Search across tasks, events, habits, goals, and categories (Ctrl+K)")
+        self.search_field.textChanged.connect(self.onSearchTextChanged)
+        self.search_field.returnPressed.connect(self.onSearchEnterPressed)
+        header_layout.addWidget(self.search_field)
         
-        # Create sidebar for navigation
+        # Search results widget
+        self.search_results_widget = SearchResultsWidget(self)
+        self.search_results_widget.resultSelected.connect(self.onSearchResultSelected)
+        self.search_results_widget.hide()
+
+        root_layout.addWidget(header)
+
+        content_row = QWidget()
+        row_layout = QHBoxLayout(content_row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(0)
+
+        # Sidebar
         self.setupSidebar()
-        
-        # Create stacked widget for main content
+        row_layout.addWidget(self.sidebar)
+
+        # Stack
         self.content_stack = QStackedWidget()
-        self.main_layout.addWidget(self.content_stack, 1)
+        row_layout.addWidget(self.content_stack, 1)
+
+        root_layout.addWidget(content_row, 1)
         
         # Create the dashboard page
         self.setupDashboard()
@@ -91,7 +167,7 @@ class TaskTitanApp(QMainWindow):
         self.content_stack.addWidget(self.goals_view)
         
         # Create productivity page
-        self.productivity_view = ProductivityView(self)
+        self.productivity_view = DailyTrackerView(self)
         self.content_stack.addWidget(self.productivity_view)
         
         # Create pomodoro page
@@ -109,103 +185,79 @@ class TaskTitanApp(QMainWindow):
         # Set up toolbar with user options
         self.setupToolbar()
         
+        # Set up status bar
+        self.setupStatusBar()
+        
+        # Initialize toast notification manager
+        self._toast_manager = ToastManager(self)
+        self._toast_manager.setGeometry(self.geometry())
+        
         # Default start with dashboard page
         self.content_stack.setCurrentIndex(0)
         self.current_page = 0
-        self.sidebarButtons[0].setProperty("selected", True)
+        self.sidebarButtons[0].setProperty("data-selected", True)
         self.sidebarButtons[0].style().unpolish(self.sidebarButtons[0])
         self.sidebarButtons[0].style().polish(self.sidebarButtons[0])
+
+        # Keyboard shortcuts
+        self._installShortcuts()
 
     def setupSidebar(self):
         """Create a modern sidebar for navigation."""
         # Sidebar container
         self.sidebar = QWidget()
         self.sidebar.setObjectName("sidebar")
-        self.sidebar.setFixedWidth(240)
-        
-        # Set style for the sidebar
-        self.sidebar.setStyleSheet("""
-            #sidebar {
-                background-color: #1E293B;
-                color: white;
-                border-right: 1px solid #334155;
-            }
-            
-            QPushButton {
-                border: none;
-                text-align: left;
-                padding: 12px 16px 12px 20px;
-                margin: 4px 8px;
-                border-radius: 8px;
-                color: white;
-                font-size: 15px;
-                font-weight: 500;
-                background-color: transparent;
-            }
-            
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.08);
-            }
-            
-            QPushButton[selected="true"] {
-                background-color: #6366F1;
-                color: white;
-                font-weight: bold;
-            }
-            
-            QLabel {
-                color: white;
-                font-size: 22px;
-                font-weight: bold;
-                padding: 20px;
-                margin-bottom: 10px;
-            }
-        """)
-        
-        # Vertical layout for sidebar content
+        self._sidebar_full_width = 240
+        self.sidebar.setMinimumWidth(0)
+        self.sidebar.setMaximumWidth(self._sidebar_full_width)
+
         sidebar_layout = QVBoxLayout(self.sidebar)
-        sidebar_layout.setContentsMargins(0, 0, 0, 20)
-        sidebar_layout.setSpacing(2)
-        
-        # App logo and title
+        sidebar_layout.setContentsMargins(8, 8, 8, 8)
+        sidebar_layout.setSpacing(4)
+
         logo_label = QLabel("TaskTitan")
-        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         sidebar_layout.addWidget(logo_label)
-        
-        # Navigation buttons
+
         self.sidebarButtons = []
-        
-        # The menu items with icons and labels
         menu_items = [
             (VIEW_NAMES[DASHBOARD_VIEW], "dashboard", DASHBOARD_VIEW),
-            ("Activities", "calendar", ACTIVITIES_VIEW),
+            (VIEW_NAMES[ACTIVITIES_VIEW], "calendar", ACTIVITIES_VIEW),
             (VIEW_NAMES[GOALS_VIEW], "goals", GOALS_VIEW),
             (VIEW_NAMES[PRODUCTIVITY_VIEW], "productivity", PRODUCTIVITY_VIEW),
             (VIEW_NAMES[POMODORO_VIEW], "pomodoro", POMODORO_VIEW),
             (VIEW_NAMES[WEEKLY_PLAN_VIEW], "weekly_plan", WEEKLY_PLAN_VIEW),
             (VIEW_NAMES[SETTINGS_VIEW], "settings", SETTINGS_VIEW),
         ]
-        
-        for index, (label, icon_name, view_index) in enumerate(menu_items):
+        for label, icon_name, idx in menu_items:
             btn = QPushButton(label)
-            
-            # Set icon from resources
             icon = get_icon(icon_name)
             if not icon.isNull():
                 btn.setIcon(icon)
-                btn.setIconSize(QSize(20, 20))
+                btn.setIconSize(QSize(18, 18))
+            btn.setProperty("data-selected", False)
+            btn.clicked.connect(lambda _=False, target=idx: self.changePage(target))
             
-            btn.setProperty("selected", False)
-            btn.setProperty("index", view_index)
-            btn.clicked.connect(lambda checked, idx=view_index: self.changePage(idx))
+            # Add tooltips with keyboard shortcuts
+            shortcut_map = {
+                DASHBOARD_VIEW: "Ctrl+1",
+                ACTIVITIES_VIEW: "Ctrl+2",
+                GOALS_VIEW: "Ctrl+3",
+                PRODUCTIVITY_VIEW: "Ctrl+4",
+                POMODORO_VIEW: "Ctrl+5",
+                WEEKLY_PLAN_VIEW: "Ctrl+6",
+                SETTINGS_VIEW: "Ctrl+7"
+            }
+            shortcut = shortcut_map.get(idx, "")
+            if shortcut:
+                btn.setToolTip(f"{VIEW_NAMES[idx]} ({shortcut})")
+            else:
+                btn.setToolTip(VIEW_NAMES[idx])
+            
             sidebar_layout.addWidget(btn)
             self.sidebarButtons.append(btn)
-        
-        # Add vertical spacer at the bottom
-        sidebar_layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
-        
-        # Add sidebar to main layout
-        self.main_layout.addWidget(self.sidebar)
+
+        sidebar_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
     def setupDashboard(self):
         """Create a modern dashboard view with widgets."""
@@ -219,26 +271,19 @@ class TaskTitanApp(QMainWindow):
         
         # Create the container widget for the scrollable content
         dashboard_container = QWidget()
-        dashboard_container.setStyleSheet("""
-            background-color: #F8FAFC;
-            border-radius: 12px;
-        """)
+        dashboard_container.setProperty("data-card", "true")
+        # Theme system will handle styling via data-card property
         dashboard_layout = QVBoxLayout(dashboard_container)
         dashboard_layout.setContentsMargins(20, 20, 20, 20)
         dashboard_layout.setSpacing(20)
         
-        # Dashboard header with gradient background
+        # Dashboard header card
         header_frame = QFrame()
-        header_frame.setStyleSheet("""
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6366F1, stop:1 #8B5CF6);
-            border-radius: 12px;
-            padding: 10px;
-        """)
+        header_frame.setProperty("data-card", "true")
         header_layout = QHBoxLayout(header_frame)
         header_layout.setContentsMargins(20, 15, 20, 15)
         
         welcome_label = QLabel(f"Welcome back! Today is {datetime.now().strftime('%A, %B %d')}")
-        welcome_label.setStyleSheet("font-size: 22px; font-weight: bold; color: white;")
         header_layout.addWidget(welcome_label)
         
         # Add spacer to push welcome label to the left
@@ -246,19 +291,7 @@ class TaskTitanApp(QMainWindow):
         
         # Add user menu button
         user_menu_btn = QPushButton("User Menu")
-        user_menu_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #EEF2FF;
-                color: #4F46E5;
-                font-weight: bold;
-                padding: 6px 12px;
-                border-radius: 6px;
-                border: 1px solid #C7D2FE;
-            }
-            QPushButton:hover {
-                background-color: #E0E7FF;
-            }
-        """)
+        # Theme system will handle button styling
         user_menu_btn.clicked.connect(self.showUserMenu)
         header_layout.addWidget(user_menu_btn)
         
@@ -267,29 +300,13 @@ class TaskTitanApp(QMainWindow):
         # Calendar widget card with enhanced styling
         calendar_card = QFrame()
         calendar_card.setObjectName("calendar-card")
-        calendar_card.setStyleSheet("""
-            QFrame#calendar-card {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                                             stop:0 #F8FAFC, 
-                                             stop:1 #FFFFFF);
-                border-radius: 16px;
-                border: 1px solid #E2E8F0;
-                padding: 15px;
-            }
-        """)
+        calendar_card.setProperty("data-card", "true")
+        # Theme system will handle styling via data-card property
         calendar_layout = QVBoxLayout(calendar_card)
         calendar_layout.setContentsMargins(15, 15, 15, 15)
         
-        # Create fancy header for calendar
+        # Create simple header for calendar (theme handles styling)
         calendar_header_frame = QFrame()
-        calendar_header_frame.setStyleSheet("""
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                                       stop:0 #6366F1, 
-                                       stop:1 #818CF8);
-            border-radius: 8px;
-            padding: 10px;
-            margin-bottom: 10px;
-        """)
         calendar_header_layout = QHBoxLayout(calendar_header_frame)
         calendar_header_layout.setContentsMargins(10, 8, 10, 8)
         
@@ -300,12 +317,10 @@ class TaskTitanApp(QMainWindow):
         calendar_header_layout.addWidget(calendar_icon)
         
         calendar_header = QLabel("Monthly Calendar")
-        calendar_header.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
         calendar_header_layout.addWidget(calendar_header)
         
         # Add today's date to the header
         today_label = QLabel(datetime.now().strftime("%B %Y"))
-        today_label.setStyleSheet("color: white; font-size: 14px;")
         calendar_header_layout.addStretch()
         calendar_header_layout.addWidget(today_label)
         
@@ -317,24 +332,20 @@ class TaskTitanApp(QMainWindow):
         
         # Add legend for calendar events
         legend_frame = QFrame()
-        legend_frame.setStyleSheet("""
-            background-color: #F8FAFC;
-            border-radius: 8px;
-            border: 1px solid #E2E8F0;
-            padding: 8px;
-            margin-top: 10px;
-        """)
         legend_layout = QHBoxLayout(legend_frame)
         
         # Current day legend
         current_day_icon = QFrame()
         current_day_icon.setFixedSize(16, 16)
-        current_day_icon.setStyleSheet("""
-            background-color: #6366F1;
+        from app.themes import ThemeManager
+        primary_color = ThemeManager.get_color("primary")
+        current_day_icon.setStyleSheet(f"""
+            background-color: {primary_color};
             border-radius: 4px;
         """)
         current_day_label = QLabel("Today")
-        current_day_label.setStyleSheet("color: #4B5563; font-size: 12px;")
+        # Theme system will handle label styling
+        current_day_label.setStyleSheet("font-size: 12px;")
         legend_layout.addWidget(current_day_icon)
         legend_layout.addWidget(current_day_label)
         legend_layout.addSpacing(10)
@@ -342,11 +353,7 @@ class TaskTitanApp(QMainWindow):
         # Event legend
         event_icon = QFrame()
         event_icon.setFixedSize(16, 16)
-        event_icon.setStyleSheet("""
-            background-color: white;
-            border-radius: 8px;
-            border: 1px solid #E2E8F0;
-        """)
+        event_icon.setStyleSheet("border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;")
         
         # Add colored dots to the event icon
         event_icon_layout = QHBoxLayout(event_icon)
@@ -363,7 +370,8 @@ class TaskTitanApp(QMainWindow):
             event_icon_layout.addWidget(dot)
         
         event_label = QLabel("Events")
-        event_label.setStyleSheet("color: #4B5563; font-size: 12px;")
+        # Theme system will handle label styling
+        event_label.setStyleSheet("font-size: 12px;")
         legend_layout.addWidget(event_icon)
         legend_layout.addWidget(event_label)
         
@@ -371,19 +379,6 @@ class TaskTitanApp(QMainWindow):
         
         # Quick navigation button to go to today
         today_btn = QPushButton("Go to Today")
-        today_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #EEF2FF;
-                color: #4F46E5;
-                font-weight: bold;
-                padding: 6px 12px;
-                border-radius: 6px;
-                border: 1px solid #C7D2FE;
-            }
-            QPushButton:hover {
-                background-color: #E0E7FF;
-            }
-        """)
         today_btn.clicked.connect(lambda: self.dashboard_calendar.calendar.setSelectedDate(QDate.currentDate()))
         legend_layout.addWidget(today_btn)
         
@@ -394,12 +389,8 @@ class TaskTitanApp(QMainWindow):
         
         # Goal Progress Wheels Section with enhanced styling
         goals_card = QFrame()
-        goals_card.setStyleSheet("""
-            background-color: white;
-            border-radius: 12px;
-            border: 1px solid #E2E8F0;
-            padding: 10px;
-        """)
+        goals_card.setProperty("data-card", "true")
+        # Theme system will handle styling via data-card property
         goals_layout = QVBoxLayout(goals_card)
         
         goals_header_layout = QHBoxLayout()
@@ -410,24 +401,13 @@ class TaskTitanApp(QMainWindow):
         goals_header_layout.addWidget(goals_icon)
         
         goals_header = QLabel("Goal Progress")
-        goals_header.setStyleSheet("font-size: 18px; font-weight: bold; color: #1E293B;")
+        # Theme system will handle label styling
+        goals_header.setStyleSheet("font-size: 18px; font-weight: bold;")
         goals_header_layout.addWidget(goals_header)
         goals_header_layout.addStretch()
         
         view_all_goals = QPushButton("View All")
-        view_all_goals.setStyleSheet("""
-            QPushButton {
-                background-color: #EEF2FF;
-                color: #6366F1;
-                font-weight: bold;
-                padding: 6px 12px;
-                border-radius: 6px;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #DBEAFE;
-            }
-        """)
+        # Theme system will handle button styling
         view_all_goals.setFixedWidth(100)
         view_all_goals.clicked.connect(lambda: self.changePage(2))  # Go to Goals page
         goals_header_layout.addWidget(view_all_goals)
@@ -468,17 +448,19 @@ class TaskTitanApp(QMainWindow):
         search_icon = get_icon("search")
         if not search_icon.isNull():
             search_action.setIcon(search_icon)
-        search_action.triggered.connect(self.openSearchDialog)
+        search_action.setToolTip("Focus search field (Ctrl+K)")
+        search_action.triggered.connect(self.focusSearch)
         toolbar.addAction(search_action)
         
         toolbar.addSeparator()
         
-        # Settings action
+        # Settings action (opens dialog with theme selection)
         settings_action = QAction("Settings", self)
         settings_icon = get_icon("settings")
         if not settings_icon.isNull():
             settings_action.setIcon(settings_icon)
-        settings_action.triggered.connect(lambda: self.changePage(SETTINGS_VIEW))  # Go to Settings page
+        settings_action.setToolTip("Open settings dialog")
+        settings_action.triggered.connect(self.openSettingsDialog)
         toolbar.addAction(settings_action)
         
         # Add spacer to push next items to the right
@@ -488,6 +470,7 @@ class TaskTitanApp(QMainWindow):
         
         # Sync action
         sync_action = QAction("Sync", self)
+        sync_action.setToolTip("Refresh and sync all data")
         sync_action.triggered.connect(self.refreshData)
         toolbar.addAction(sync_action)
         
@@ -496,43 +479,95 @@ class TaskTitanApp(QMainWindow):
         user_icon = get_icon("user")
         if not user_icon.isNull():
             user_action.setIcon(user_icon)
+        user_action.setToolTip("User menu and settings")
         user_action.triggered.connect(self.showUserMenu)
         toolbar.addAction(user_action)
         
+        # Settings action
+        settings_action = QAction("Settings", self)
+        settings_icon = get_icon("settings")
+        if not settings_icon.isNull():
+            settings_action.setIcon(settings_icon)
+        settings_action.setToolTip("Open settings dialog")
+        settings_action.triggered.connect(self.openSettingsDialog)
+        toolbar.addAction(settings_action)
+        
         self.addToolBar(toolbar)
 
+    def setupStatusBar(self):
+        """Set up the status bar for feedback messages."""
+        self.status_bar = QStatusBar(self)
+        self.setStatusBar(self.status_bar)
+        
+        # Set initial status message
+        self.status_bar.showMessage("Ready")
+        
+        # Style the status bar
+        from app.themes import ThemeManager
+        theme_colors = ThemeManager.get_current_palette()
+        bg_color = theme_colors.get("surface", "#FFFFFF")
+        text_color = theme_colors.get("text", "#000000")
+        self.status_bar.setStyleSheet(f"""
+            QStatusBar {{
+                background-color: {bg_color};
+                color: {text_color};
+                border-top: 1px solid {theme_colors.get("border", "#E2E8F0")};
+                padding: 4px;
+            }}
+        """)
+    
+    def show_status_message(self, message, timeout=3000):
+        """Show a temporary status message.
+        
+        Args:
+            message: Message to display
+            timeout: Duration in milliseconds (0 = permanent)
+        """
+        self.status_bar.showMessage(message, timeout)
+    
+    def show_success_toast(self, message):
+        """Show a success toast notification."""
+        show_toast(self, message, ToastType.SUCCESS)
+    
+    def show_error_toast(self, message):
+        """Show an error toast notification."""
+        show_toast(self, message, ToastType.ERROR)
+    
+    def show_warning_toast(self, message):
+        """Show a warning toast notification."""
+        show_toast(self, message, ToastType.WARNING)
+    
+    def show_info_toast(self, message):
+        """Show an info toast notification."""
+        show_toast(self, message, ToastType.INFO)
+
     def changePage(self, index):
-        """Change the current page in the stacked widget."""
+        """Change the current page and update selection styling."""
         self.content_stack.setCurrentIndex(index)
         self.current_page = index
-        
-        # Refresh data when switching to activities or weekly plan views
-        if index == 1:  # Activities view
-            if hasattr(self, 'activities_view') and self.activities_view:
+
+        if index == ACTIVITIES_VIEW and hasattr(self, 'activities_view'):
+            if hasattr(self.activities_view, 'refresh'):
                 self.activities_view.refresh()
-        elif index == 5:  # Weekly plan view
-            if hasattr(self, 'weekly_plan_view') and self.weekly_plan_view:
+        if index == WEEKLY_PLAN_VIEW and hasattr(self, 'weekly_plan_view'):
+            if hasattr(self.weekly_plan_view, 'refresh'):
                 self.weekly_plan_view.refresh()
-        
-        # Update sidebar button styling
-        for button in self.sidebarButtons:
-            button.setProperty("selected", False)
+
+        for i, button in enumerate(self.sidebarButtons):
+            button.setProperty("data-selected", i == index)
             button.style().unpolish(button)
             button.style().polish(button)
-            
-        if index < len(self.sidebarButtons):
-            self.sidebarButtons[index].setProperty("selected", True)
-            self.sidebarButtons[index].style().unpolish(self.sidebarButtons[index])
-            self.sidebarButtons[index].style().polish(self.sidebarButtons[index])
+
+        return None
 
     def loadData(self):
         """Load activities and tasks from database and update UI."""
-        logging.debug("Loading data...")
-        if hasattr(self, 'activitiesView') and self.activitiesView:
-            if hasattr(self.activitiesView, 'loadActivitiesFromDatabase'):
-                self.activitiesView.loadActivitiesFromDatabase()
-            elif hasattr(self.activitiesView, 'refresh'):
-                self.activitiesView.refresh()
+        logger.debug("Loading data...")
+        if hasattr(self, 'activities_view') and self.activities_view:
+            if hasattr(self.activities_view, 'loadActivitiesFromDatabase'):
+                self.activities_view.loadActivitiesFromDatabase()
+            elif hasattr(self.activities_view, 'refresh'):
+                self.activities_view.refresh()
         
         # Sync calendar with activities if both exist
         if hasattr(self, 'dashboard_calendar') and hasattr(self, 'activities_manager'):
@@ -548,15 +583,15 @@ class TaskTitanApp(QMainWindow):
             completed_activities = 0
             
             # In our sample implementation we'll get data from the activities view
-            if hasattr(self, 'activitiesView') and hasattr(self.activitiesView, 'activities'):
-                if isinstance(self.activitiesView.activities, dict):
-                    for activity_type, activities in self.activitiesView.activities.items():
+            if hasattr(self, 'activities_view') and hasattr(self.activities_view, 'activities'):
+                if isinstance(self.activities_view.activities, dict):
+                    for activity_type, activities in self.activities_view.activities.items():
                         total_activities += len(activities)
                         completed_activities += sum(1 for a in activities if a.get('completed', False))
                 else:
                     # Handle the case where activities is a list
-                    total_activities = len(self.activitiesView.activities)
-                    completed_activities = sum(1 for a in self.activitiesView.activities if a.get('completed', False))
+                    total_activities = len(self.activities_view.activities)
+                    completed_activities = sum(1 for a in self.activities_view.activities if a.get('completed', False))
             
             if hasattr(self, 'activities_counter'):
                 self.activities_counter.setText(f"{completed_activities}/{total_activities}")
@@ -575,7 +610,7 @@ class TaskTitanApp(QMainWindow):
                         widget.refresh()
                     
         except Exception as e:
-            print(f"Error refreshing data: {e}")
+            logger.error(f"Error refreshing data: {e}", exc_info=True)
 
     def loadActivities(self):
         """Load activities data for the unified activities view."""
@@ -593,9 +628,10 @@ class TaskTitanApp(QMainWindow):
                 self.addSampleActivities()
             else:
                 # Refresh the activities view
-                self.activitiesView.refresh()
+                if hasattr(self, 'activities_view'):
+                    self.activities_view.refresh()
         except Exception as e:
-            print(f"Error loading activities: {e}")
+            logger.error(f"Error loading activities: {e}", exc_info=True)
 
     def loadDashboardGoals(self):
         """Load goals and create progress wheel visualizations for them."""
@@ -678,7 +714,8 @@ class TaskTitanApp(QMainWindow):
                 
                 # Add goal title
                 section_label = QLabel(parent_title)
-                section_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+                # Theme system will handle label styling - white text on colored background
+                section_label.setStyleSheet("font-size: 16px; font-weight: bold;")
                 header_layout.addWidget(section_label)
                 
                 # Add due date if it exists
@@ -694,7 +731,8 @@ class TaskTitanApp(QMainWindow):
                     else:
                         due_label = QLabel(f"Overdue by {-days_remaining} days")
                     
-                    due_label.setStyleSheet("color: white; font-size: 12px;")
+                    # Theme system will handle label styling
+                    due_label.setStyleSheet("font-size: 12px;")
                     header_layout.addWidget(due_label)
                 
                 header_layout.addStretch()
@@ -703,15 +741,10 @@ class TaskTitanApp(QMainWindow):
                 self.goals_wheels_container.addWidget(header_frame, current_row, 0, 1, 3)
                 current_row += 1
                 
-                # Create a frame for the wheels section with light background
+                # Create a frame for the wheels section with theme-aware background
                 wheels_frame = QFrame()
-                wheels_frame.setStyleSheet(f"""
-                    background-color: white;
-                    border-radius: 8px;
-                    border: 1px solid #E2E8F0;
-                    padding: 15px;
-                    margin-bottom: 5px;
-                """)
+                wheels_frame.setProperty("data-card", "true")
+                # Theme system will handle styling via data-card property
                 wheels_layout = QGridLayout(wheels_frame)
                 wheels_layout.setSpacing(20)
                 
@@ -795,7 +828,7 @@ class TaskTitanApp(QMainWindow):
                 current_row += 1
                 
         except (sqlite3.Error, ValueError) as e:
-            print(f"Error loading dashboard goals: {e}")
+            logger.error(f"Error loading dashboard goals: {e}", exc_info=True)
             # Show error message
             error_label = QLabel("Error loading goals")
             error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -839,7 +872,7 @@ class TaskTitanApp(QMainWindow):
                 return self.calculateTimeBasedProgress(goal)
                 
         except sqlite3.Error as e:
-            print(f"Error calculating goal progress: {e}")
+            logger.error(f"Error calculating goal progress: {e}", exc_info=True)
             return 0
     
     def calculateTimeBasedProgress(self, goal):
@@ -916,12 +949,24 @@ class TaskTitanApp(QMainWindow):
 
     def openSearchDialog(self):
         """Open the search dialog."""
-        # Not implemented in this version
-        pass
+        # Focus the header search; future: open command palette
+        if hasattr(self, 'search_field'):
+            self.search_field.setFocus()
 
     def showUserMenu(self):
         """Show the user menu."""
+        from app.auth.authentication import get_auth_manager
+        auth_manager = get_auth_manager()
+        
         menu = QMenu(self)
+        
+        # Show current user info
+        user = auth_manager.get_current_user()
+        if user:
+            user_info = QAction(f"User: {user['username']}", self)
+            user_info.setEnabled(False)
+            menu.addAction(user_info)
+            menu.addSeparator()
         
         profile_action = QAction("Profile", self)
         profile_action.triggered.connect(self.showUserProfile)
@@ -937,6 +982,13 @@ class TaskTitanApp(QMainWindow):
         menu.addAction(theme_action)
         menu.addSeparator()
         
+        # Database manager action
+        db_manager_action = QAction("Manage Databases...", self)
+        db_manager_action.triggered.connect(self.openDatabaseManager)
+        menu.addAction(db_manager_action)
+        
+        menu.addSeparator()
+        
         logout_action = QAction("Logout", self)
         logout_action.triggered.connect(self.logout)
         menu.addAction(logout_action)
@@ -944,6 +996,53 @@ class TaskTitanApp(QMainWindow):
         # Position the menu
         toolbar = self.findChild(QToolBar)
         menu.exec(toolbar.mapToGlobal(toolbar.rect().bottomRight()))
+
+    def openSettingsDialog(self):
+        """Open the settings dialog (theme selection, etc.)."""
+        try:
+            dlg = SettingsDialog(self)
+            dlg.exec()
+        except Exception as e:
+            logger.error(f"Failed to open Settings dialog: {e}", exc_info=True)
+
+    def openDatabaseManager(self):
+        """Open the database manager dialog."""
+        from app.views.database_manager_dialog import DatabaseManagerDialog
+        from app.models.database import set_current_database
+        from PyQt6.QtWidgets import QMessageBox
+        
+        dialog = DatabaseManagerDialog(self)
+        dialog.database_changed.connect(self.handleDatabaseChange)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Database change will be handled by the signal
+            pass
+    
+    def handleDatabaseChange(self, new_db_path: str):
+        """Handle database change event."""
+        from app.models.database import set_current_database
+        from PyQt6.QtWidgets import QMessageBox
+        
+        reply = QMessageBox.question(
+            self,
+            "Database Changed",
+            "Database has been changed. The application needs to restart to load the new database.\n\n"
+            "Restart now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            set_current_database(new_db_path)
+            # Restart application
+            QMessageBox.information(
+                self,
+                "Restart Required",
+                "Please restart the application to load the new database."
+            )
+            self.close()
+        else:
+            # User chose not to restart, but database path is already saved
+            set_current_database(new_db_path)
 
     def showUserProfile(self):
         """Show the user profile dialog."""
@@ -954,14 +1053,37 @@ class TaskTitanApp(QMainWindow):
         self.refreshData()
 
     def toggleTheme(self):
-        """Toggle between light and dark theme."""
-        # This would be implemented to switch stylesheets
-        pass
+        """Toggle between dark and light themes via ThemeManager."""
+        try:
+            from PyQt6.QtWidgets import QApplication
+            from app.themes import ThemeManager
+            app = QApplication.instance()
+            if app:
+                ThemeManager.toggle_dark_light(app)
+        except Exception:
+            pass
 
     def logout(self):
         """Logout the current user."""
-        # This would be implemented in a real application
-        pass 
+        from app.auth.authentication import get_auth_manager
+        from PyQt6.QtWidgets import QMessageBox
+        
+        reply = QMessageBox.question(
+            self,
+            "Logout",
+            "Are you sure you want to logout?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            auth_manager = get_auth_manager()
+            auth_manager.logout()
+            logger.info("User logged out")
+            
+            # Close the application (or show login dialog again)
+            QMessageBox.information(self, "Logged Out", "You have been logged out. Please restart the application to login again.")
+            self.close() 
 
     def addSampleGoals(self):
         """Add sample goals to the database if none exist."""
@@ -1120,17 +1242,17 @@ class TaskTitanApp(QMainWindow):
             
             # Commit the transaction
             self.conn.commit()
-            print("Added sample goals successfully!")
+            logger.info("Added sample goals successfully!")
             
         except sqlite3.Error as e:
-            print(f"Error adding sample goals: {e}")
+            logger.error(f"Error adding sample goals: {e}", exc_info=True)
             # Roll back any changes if something went wrong
             self.conn.rollback() 
 
     def addSampleActivities(self):
         """Add sample activities for demo purposes."""
         # Check if activities view is initialized
-        if not hasattr(self, 'activitiesView'):
+        if not hasattr(self, 'activities_view'):
             return
             
         # Sample task
@@ -1143,7 +1265,7 @@ class TaskTitanApp(QMainWindow):
             'priority': 2,  # High
             'category': 'Work'
         }
-        self.activitiesView.addActivity(task_data)
+        self.activities_view.addActivity(task_data)
         
         # Sample event
         event_data = {
@@ -1154,7 +1276,7 @@ class TaskTitanApp(QMainWindow):
             'end_time': QTime(15, 30),
             'category': 'Work'
         }
-        self.activitiesView.addActivity(event_data)
+        self.activities_view.addActivity(event_data)
         
         # Sample habit
         habit_data = {
@@ -1166,7 +1288,7 @@ class TaskTitanApp(QMainWindow):
             'days_of_week': 'Mon,Wed,Fri',
             'category': 'Health'
         }
-        self.activitiesView.addActivity(habit_data)
+        self.activities_view.addActivity(habit_data)
         
         # Sample future task
         tomorrow = QDate.currentDate().addDays(1)
@@ -1179,7 +1301,7 @@ class TaskTitanApp(QMainWindow):
             'priority': 1,  # Medium
             'category': 'Work'
         }
-        self.activitiesView.addActivity(future_task_data) 
+        self.activities_view.addActivity(future_task_data) 
 
     def onActivityAdded(self, activity):
         """Handle when a new activity is added."""
@@ -1212,21 +1334,21 @@ class TaskTitanApp(QMainWindow):
         """Save any pending changes before closing."""
         try:
             # Make sure activities view explicitly saves its data
-            if hasattr(self, 'activitiesView') and hasattr(self.activitiesView, 'saveChanges'):
-                print("Saving activities before exit...")
-                self.activitiesView.saveChanges()
+            if hasattr(self, 'activities_view') and hasattr(self.activities_view, 'saveChanges'):
+                logger.debug("Saving activities before exit...")
+                self.activities_view.saveChanges()
             
             # Save any unsaved data in the current view
             current_widget = self.content_stack.currentWidget()
             if hasattr(current_widget, 'saveChanges'):
-                print(f"Saving changes for {current_widget.__class__.__name__}")
+                logger.debug(f"Saving changes for {current_widget.__class__.__name__}")
                 current_widget.saveChanges()
             
             # Loop through all views to save any pending changes
             for i in range(self.content_stack.count()):
                 widget = self.content_stack.widget(i)
                 if widget != current_widget and hasattr(widget, 'saveChanges'):
-                    print(f"Saving changes for {widget.__class__.__name__}")
+                    logger.debug(f"Saving changes for {widget.__class__.__name__}")
                     widget.saveChanges()
                     
             # Ensure database commits all changes
@@ -1234,5 +1356,154 @@ class TaskTitanApp(QMainWindow):
                 self.conn.commit()
                 
         except Exception as e:
-            print(f"Error saving pending changes: {e}") 
+            logger.error(f"Error saving pending changes: {e}", exc_info=True) 
+
+    # Sidebar interactions and shortcuts
+    def toggleSidebar(self):
+        try:
+            current = self.sidebar.width()
+            target = 0 if current > 60 else getattr(self, '_sidebar_full_width', 240)
+            anim = QPropertyAnimation(self.sidebar, b"maximumWidth", self)
+            anim.setDuration(180)
+            anim.setStartValue(current)
+            anim.setEndValue(target)
+            anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+            anim.start()
+            self._sidebar_anim = anim
+        except Exception:
+            # Fallback without animation
+            self.sidebar.setFixedWidth(0 if self.sidebar.width() > 60 else getattr(self, '_sidebar_full_width', 240))
+
+    def _installShortcuts(self):
+        try:
+            QShortcut(QKeySequence("Ctrl+K"), self, activated=self.focusSearch)
+            # Navigation shortcuts Ctrl+1..7
+            keys = ["Ctrl+1","Ctrl+2","Ctrl+3","Ctrl+4","Ctrl+5","Ctrl+6","Ctrl+7"]
+            for idx, key in enumerate(keys):
+                QShortcut(QKeySequence(key), self, activated=lambda i=idx: self.changePage(i))
+            # Toggle sidebar
+            QShortcut(QKeySequence("Ctrl+B"), self, activated=self.toggleSidebar)
+            # Search navigation
+            QShortcut(QKeySequence("Escape"), self, activated=self.hideSearchResults)
+        except Exception:
+            pass
+    
+    def focusSearch(self):
+        """Focus the search field and show results if there's text."""
+        self.search_field.setFocus()
+        if self.search_field.text():
+            self.performSearch()
+    
+    def onSearchTextChanged(self, text):
+        """Handle search text changes with debounce."""
+        if len(text.strip()) < 2:
+            self.search_results_widget.hide()
+            return
+        
+        # Debounce search (wait 300ms after user stops typing)
+        self.search_timer.stop()
+        self.search_timer.start(300)
+    
+    def performSearch(self):
+        """Perform the actual search."""
+        query = self.search_field.text().strip()
+        
+        if len(query) < 2:
+            self.search_results_widget.hide()
+            return
+        
+        # Perform search
+        results = self.search_manager.search(query)
+        
+        # Update results widget
+        self.search_results_widget.setResults(results)
+        
+        # Position and show results widget
+        if results:
+            self.positionSearchResults()
+            self.search_results_widget.show()
+        else:
+            self.search_results_widget.hide()
+    
+    def positionSearchResults(self):
+        """Position the search results widget below the search field."""
+        search_field_rect = self.search_field.geometry()
+        search_field_pos = self.search_field.mapToGlobal(QPoint(0, 0))
+        
+        # Position below search field
+        results_x = search_field_pos.x()
+        results_y = search_field_pos.y() + search_field_rect.height() + 5
+        
+        self.search_results_widget.move(results_x, results_y)
+        self.search_results_widget.setMinimumWidth(search_field_rect.width())
+    
+    def onSearchEnterPressed(self):
+        """Handle Enter key press in search field."""
+        selected_result = self.search_results_widget.getSelectedResult()
+        if selected_result:
+            self.onSearchResultSelected(selected_result)
+        elif self.search_results_widget.results_list.count() > 0:
+            # Select first result if none selected
+            self.search_results_widget.results_list.setCurrentRow(0)
+            first_result = self.search_results_widget.getSelectedResult()
+            if first_result:
+                self.onSearchResultSelected(first_result)
+    
+    def onSearchFocusOut(self, event):
+        """Handle search field focus out."""
+        # Hide results after a short delay to allow clicking on results
+        QTimer.singleShot(200, self.hideSearchResults)
+    
+    def hideSearchResults(self):
+        """Hide the search results widget."""
+        self.search_results_widget.hide()
+    
+    def onSearchResultSelected(self, result: SearchResult):
+        """Handle search result selection."""
+        self.hideSearchResults()
+        self.search_field.clear()
+        
+        # Navigate to the appropriate view based on result type
+        if result.item_type in ['task', 'event', 'habit']:
+            # Switch to activities view
+            self.changePage(ACTIVITIES_VIEW)
+            # Scroll to or select the activity
+            if hasattr(self, 'activities_view'):
+                if hasattr(self.activities_view, 'selectActivityById'):
+                    self.activities_view.selectActivityById(result.item_id)
+                elif hasattr(self.activities_view, 'refresh'):
+                    self.activities_view.refresh()
+            self.show_info_toast(f"Selected {result.item_type}: {result.title}")
+        
+        elif result.item_type == 'goal':
+            # Switch to goals view
+            self.changePage(GOALS_VIEW)
+            if hasattr(self, 'goals_view'):
+                if hasattr(self.goals_view, 'selectGoalById'):
+                    self.goals_view.selectGoalById(result.item_id)
+            self.show_info_toast(f"Selected goal: {result.title}")
+        
+        elif result.item_type == 'category':
+            # Switch to activities view and filter by category
+            self.changePage(ACTIVITIES_VIEW)
+            if hasattr(self, 'activities_view'):
+                if hasattr(self.activities_view, 'filterByCategory'):
+                    self.activities_view.filterByCategory(result.title)
+            self.show_info_toast(f"Filtered by category: {result.title}")
+    
+    def resizeEvent(self, event):
+        """Handle window resize events."""
+        super().resizeEvent(event)
+        # Update toast manager geometry when window resizes
+        if hasattr(self, '_toast_manager'):
+            self._toast_manager.setGeometry(self.geometry())
+            self._toast_manager.update_positions()
+    
+    def moveEvent(self, event):
+        """Handle window move events."""
+        super().moveEvent(event)
+        # Update toast manager geometry when window moves
+        if hasattr(self, '_toast_manager'):
+            self._toast_manager.setGeometry(self.geometry())
+            self._toast_manager.update_positions()
 

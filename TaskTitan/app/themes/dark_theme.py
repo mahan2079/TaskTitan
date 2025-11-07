@@ -163,20 +163,20 @@ def get_dark_stylesheet():
     /* Calendar Widget */
     QCalendarWidget {
         background-color: #1E1E1E; /* Deep dark background for the calendar */
-        color: #000000;           /* Default text color for calendar elements set to black */
+        color: #E0E0E0;            /* Light text for readability */
         border: none;
         font-size: 14px;
     }
     QCalendarWidget QAbstractItemView {
         background-color: #2C2C2C;               /* Slightly lighter background for dates */
-        selection-background-color: #FF7043;    /* Vibrant orange for selected dates */
-        color: #000000;                         /* Black text for default and selected dates */
-        selection-color: #000000;               /* Ensure selected date text is also black */
-        gridline-color: #FFA726;                /* Subtle orange for gridlines */
+        selection-background-color: #FF7043;     /* Vibrant orange for selected dates */
+        color: #E0E0E0;                          /* Light text */
+        selection-color: #0D0D0D;                /* Dark text over bright selection */
+        gridline-color: #FFA726;                 /* Subtle orange for gridlines */
     }
     QCalendarWidget QAbstractItemView::item {
-        color: #000000;                         /* Default text color for dates */
-        padding: 4px;                           /* Add spacing for readability */
+        color: #E0E0E0;                          /* Default text color for dates */
+        padding: 4px;                            /* Add spacing for readability */
     }
 
     /* Weekday Column Backgrounds (Monday to Sunday) */
@@ -185,11 +185,11 @@ def get_dark_stylesheet():
         gridline-color: #FFA726;                /* Subtle orange for gridlines */
     }
     QCalendarWidget QTableView::item:enabled {
-        background-color: #E0F7FA;             /* Light bluish background for enabled weekdays */
-        color: #000000;                        /* Black text for visibility */
+        background-color: #2C2C2C;             /* Dark background for enabled weekdays - matches theme */
+        color: #E0E0E0;                        /* Light text for visibility */
     }
     QCalendarWidget QTableView::item:enabled:alternate {
-        background-color: #B2EBF2;             /* Slightly darker bluish background for alternating rows */
+        background-color: #383838;             /* Slightly lighter dark background for alternating rows */
     }
 
     /* Navigation Buttons */
@@ -207,15 +207,15 @@ def get_dark_stylesheet():
     /* Spin Box in Calendar */
     QCalendarWidget QSpinBox {
         background-color: #2C2C2C;             /* Dark grey for spin box */
-        color: #000000;                        /* Black text for readability */
+        color: #E0E0E0;                        /* Light text for readability */
         border-radius: 6px;                    /* Rounded corners */
         padding: 4px;                          /* Padding for better spacing */
     }
 
     /* Header (Day Names) */
     QCalendarWidget QHeaderView {
-        background-color: #4DD0E1;             /* Bright bluish header background */
-        color: #000000;                        /* Black text for contrast */
+        background-color: #3C3C3C;             /* Dark header background */
+        color: #E0E0E0;                        /* Light text */
         border: none;                          /* Clean header look without borders */
     }
     """ 

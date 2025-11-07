@@ -11,7 +11,12 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 # Now we can import from app
-from app.main import main
+try:
+    from app.main import main
+except Exception:
+    # Fallback to legacy entrypoint
+    from TaskTitan.app.main import main  # type: ignore
 
 if __name__ == "__main__":
     main()
+    

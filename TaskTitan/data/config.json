@@ -1,0 +1,99 @@
+{
+  "window": {
+    "width": 1200,
+    "height": 800,
+    "sidebar_width": 240,
+    "remember_size": true,
+    "remember_position": true
+  },
+  "display": {
+    "font_family": "Segoe UI",
+    "font_size": 10,
+    "theme": "System (Auto)",
+    "follow_system_theme": true
+  },
+  "pomodoro": {
+    "work_minutes": 25,
+    "short_break_minutes": 5,
+    "long_break_minutes": 15,
+    "long_break_interval": 4,
+    "auto_start_breaks": false,
+    "auto_start_work": false
+  },
+  "backup": {
+    "auto_backup_enabled": false,
+    "auto_backup_interval": "daily",
+    "backup_retention_days": 30,
+    "backup_location": null
+  },
+  "files": {
+    "max_file_size_mb": 50,
+    "allowed_extensions": [
+      ".pdf",
+      ".doc",
+      ".docx",
+      ".txt",
+      ".rtf",
+      ".odt",
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".gif",
+      ".bmp",
+      ".svg",
+      ".webp",
+      ".zip",
+      ".rar",
+      ".7z",
+      ".tar",
+      ".gz",
+      ".xls",
+      ".xlsx",
+      ".csv",
+      ".ods",
+      ".ppt",
+      ".pptx",
+      ".odp",
+      ".mp3",
+      ".wav",
+      ".ogg",
+      ".flac",
+      ".mp4",
+      ".avi",
+      ".mov",
+      ".mkv",
+      ".webm",
+      ".json",
+      ".xml",
+      ".html",
+      ".md"
+    ]
+  },
+  "notifications": {
+    "enabled": true,
+    "task_reminders": true,
+    "deadline_alerts": true,
+    "backup_notifications": true
+  },
+  "updates": {
+    "check_for_updates": false,
+    "check_interval_days": 7
+  },
+  "database": {
+    "backup_on_startup": false,
+    "integrity_check_on_startup": false
+  },
+  "performance": {
+    "cache_enabled": true,
+    "cache_size_mb": 100,
+    "lazy_loading": true
+  },
+  "ai": {
+    "provider": "openai",
+    "openai_api_key": null,
+    "anthropic_api_key": null,
+    "model": "gpt-3.5-turbo",
+    "temperature": 0.7,
+    "max_tokens": 1000
+  }
+}

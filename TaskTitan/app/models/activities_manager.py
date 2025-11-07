@@ -8,6 +8,9 @@ which combines tasks, events, and habits into a single data structure.
 import sqlite3
 from datetime import datetime, timedelta
 from PyQt6.QtCore import QDate, QTime
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class ActivitiesManager:
@@ -63,8 +66,8 @@ class ActivitiesManager:
         # Make sure color column exists (for existing tables)
         try:
             self.cursor.execute("SELECT color FROM activities LIMIT 1")
-        except:
-            print("Adding color column to activities table")
+        except Exception:
+            logger.debug("Adding color column to activities table")
             self.cursor.execute("ALTER TABLE activities ADD COLUMN color TEXT")
         
         # Create migration trigger to update timestamps
@@ -91,8 +94,8 @@ class ActivitiesManager:
         # Only proceed if activities table is empty
         if count == 0:
             # Migration has been disabled to prevent default activities
-            # We'll just print a message indicating this
-            print("Migration of default activities has been disabled")
+            # We'll just log a message indicating this
+            logger.debug("Migration of default activities has been disabled")
             
             # If we need to create any system-required records (like categories) we could do that here
             # But we won't create any default user-facing activities
@@ -496,4 +499,377 @@ class ActivitiesManager:
                 # Handle integer seconds
                 return QTime(0, 0)
         except:
-            return QTime(0, 0) 
+            return QTime(0, 0)
+    
+    def check_for_overlaps(self, date, start_time, end_time, exclude_activity_id=None):
+        """Check if a time slot overlaps with existing activities.
+        
+        Args:
+            date: QDate or date string for the date to check
+            start_time: QTime or time string for start time
+            end_time: QTime or time string for end time
+            exclude_activity_id: Activity ID to exclude from check (when editing)
+            
+        Returns:
+            List of conflicting activities with their details
+        """
+        if not self.conn or not self.cursor:
+            raise ValueError("Database connection not set")
+        
+        # Convert QDate to string
+        if isinstance(date, QDate):
+            date_str = date.toString("yyyy-MM-dd")
+            day_name = date.toString("dddd")
+        else:
+            date_str = date
+            # Try to get day name from date string
+            try:
+                year, month, day = map(int, date_str.split('-'))
+                qdate = QDate(year, month, day)
+                day_name = qdate.toString("dddd")
+            except:
+                day_name = ""
+        
+        # Convert QTime to string
+        if isinstance(start_time, QTime):
+            start_str = start_time.toString("HH:mm")
+        else:
+            start_str = start_time
+        
+        if isinstance(end_time, QTime):
+            end_str = end_time.toString("HH:mm")
+        else:
+            end_str = end_time
+        
+        # Build query to check for overlaps
+        # Get activities for this specific date
+        if exclude_activity_id:
+            self.cursor.execute("""
+                SELECT id, title, date, start_time, end_time, type, priority
+                FROM activities
+                WHERE date = ? AND id != ?
+                ORDER BY start_time
+            """, (date_str, exclude_activity_id))
+        else:
+            self.cursor.execute("""
+                SELECT id, title, date, start_time, end_time, type, priority
+                FROM activities
+                WHERE date = ?
+                ORDER BY start_time
+            """, (date_str,))
+        
+        date_activities = self.cursor.fetchall()
+        
+        # Get repeating habits for this day of the week
+        if day_name:
+            self.cursor.execute("""
+                SELECT id, title, date, start_time, end_time, type, priority
+                FROM activities
+                WHERE type = 'habit' AND days_of_week IS NOT NULL AND days_of_week LIKE ?
+                ORDER BY start_time
+            """, (f'%{day_name[:3]}%',))
+            habit_activities = self.cursor.fetchall()
+        else:
+            habit_activities = []
+        
+        # Check for overlaps
+        conflicts = []
+        
+        def check_time_overlap(start1, end1, start2, end2):
+            """Check if two time ranges overlap."""
+            # Convert to minutes for easy comparison
+            def time_to_minutes(t):
+                if isinstance(t, QTime):
+                    return t.hour() * 60 + t.minute()
+                elif isinstance(t, str):
+                    try:
+                        h, m = map(int, t.split(':'))
+                        return h * 60 + m
+                    except:
+                        return 0
+                else:
+                    return 0
+            
+            start1_min = time_to_minutes(start1)
+            end1_min = time_to_minutes(end1)
+            start2_min = time_to_minutes(start2)
+            end2_min = time_to_minutes(end2)
+            
+            # Check overlap: start1 < end2 AND start2 < end1
+            return start1_min < end2_min and start2_min < end1_min
+        
+        # Check date-specific activities
+        for row in date_activities:
+            act_id, title, _, act_start, act_end, act_type, priority = row
+            
+            # Skip excluded activity
+            if exclude_activity_id and act_id == exclude_activity_id:
+                continue
+            
+            # Check for overlap
+            if check_time_overlap(start_time, end_time, act_start, act_end):
+                conflicts.append({
+                    'id': act_id,
+                    'title': title,
+                    'start_time': act_start,
+                    'end_time': act_end,
+                    'type': act_type,
+                    'priority': priority
+                })
+        
+        # Check habits that occur on this day
+        for row in habit_activities:
+            act_id, title, _, act_start, act_end, act_type, priority = row
+            
+            # Skip excluded activity
+            if exclude_activity_id and act_id == exclude_activity_id:
+                continue
+            
+            # Check for overlap
+            if check_time_overlap(start_time, end_time, act_start, act_end):
+                # Convert time strings to QTime if needed for display
+                conflict = {
+                    'id': act_id,
+                    'title': title,
+                    'start_time': act_start,
+                    'end_time': act_end,
+                    'type': act_type,
+                    'priority': priority
+                }
+                # Only add if not already in conflicts
+                if not any(c['id'] == act_id for c in conflicts):
+                    conflicts.append(conflict)
+        
+        return conflicts
+    
+    def suggest_alternative_slots(self, date, duration_minutes, preferred_start_hour=9, preferred_end_hour=17):
+        """Suggest alternative time slots for an activity.
+        
+        Args:
+            date: QDate or date string for the date
+            duration_minutes: Duration of the activity in minutes
+            preferred_start_hour: Preferred start hour (default 9 AM)
+            preferred_end_hour: Preferred end hour (default 5 PM)
+            
+        Returns:
+            List of suggested time slots as tuples (start_time, end_time)
+        """
+        if not self.conn or not self.cursor:
+            raise ValueError("Database connection not set")
+        
+        # Get all activities for this date
+        if isinstance(date, QDate):
+            date_str = date.toString("yyyy-MM-dd")
+            day_name = date.toString("dddd")
+        else:
+            date_str = date
+            try:
+                year, month, day = map(int, date_str.split('-'))
+                qdate = QDate(year, month, day)
+                day_name = qdate.toString("dddd")
+            except:
+                day_name = ""
+        
+        # Get date-specific activities
+        self.cursor.execute("""
+            SELECT start_time, end_time
+            FROM activities
+            WHERE date = ?
+            ORDER BY start_time
+        """, (date_str,))
+        date_activities = self.cursor.fetchall()
+        
+        # Get habits for this day
+        if day_name:
+            self.cursor.execute("""
+                SELECT start_time, end_time
+                FROM activities
+                WHERE type = 'habit' AND days_of_week IS NOT NULL AND days_of_week LIKE ?
+                ORDER BY start_time
+            """, (f'%{day_name[:3]}%',))
+            habit_activities = self.cursor.fetchall()
+        else:
+            habit_activities = []
+        
+        # Combine and sort all activities
+        all_activities = []
+        
+        def time_to_minutes(t):
+            """Convert time to minutes."""
+            if isinstance(t, QTime):
+                return t.hour() * 60 + t.minute()
+            elif isinstance(t, str):
+                try:
+                    h, m = map(int, t.split(':'))
+                    return h * 60 + m
+                except:
+                    return 0
+            return 0
+        
+        for row in date_activities:
+            start_min = time_to_minutes(row[0])
+            end_min = time_to_minutes(row[1])
+            all_activities.append((start_min, end_min))
+        
+        for row in habit_activities:
+            start_min = time_to_minutes(row[0])
+            end_min = time_to_minutes(row[1])
+            if (start_min, end_min) not in all_activities:
+                all_activities.append((start_min, end_min))
+        
+        all_activities.sort(key=lambda x: x[0])
+        
+        # Find available slots
+        suggestions = []
+        search_start_hour = preferred_start_hour
+        search_end_hour = preferred_end_hour
+        
+        def minutes_to_qtime(minutes):
+            """Convert minutes to QTime."""
+            hours = minutes // 60
+            mins = minutes % 60
+            return QTime(hours, mins)
+        
+        # Check each 30-minute slot
+        for hour in range(search_start_hour, search_end_hour):
+            for minute in [0, 30]:
+                slot_start_min = hour * 60 + minute
+                slot_end_min = slot_start_min + duration_minutes
+                
+                # Check if this slot overlaps with any existing activity
+                overlaps = False
+                for act_start, act_end in all_activities:
+                    if slot_start_min < act_end and act_end > act_start:
+                        overlaps = True
+                        break
+                
+                if not overlaps and slot_end_min <= 24 * 60:  # Ensure it doesn't go past midnight
+                    slot_start = minutes_to_qtime(slot_start_min)
+                    slot_end = minutes_to_qtime(slot_end_min)
+                    suggestions.append((slot_start, slot_end))
+                    
+                    if len(suggestions) >= 5:  # Limit to 5 suggestions
+                        return suggestions
+        
+        return suggestions
+    
+    def find_empty_slots(self, date, start_hour=0, end_hour=24, min_duration_minutes=30):
+        """Find empty time slots (gaps) in the schedule.
+        
+        Args:
+            date: QDate or date string for the date
+            start_hour: Start hour to search from (default 0)
+            end_hour: End hour to search to (default 24)
+            min_duration_minutes: Minimum duration for a slot to be considered
+            
+        Returns:
+            List of empty slots as dicts with 'start_time', 'end_time', 'duration_minutes'
+        """
+        if not self.conn or not self.cursor:
+            raise ValueError("Database connection not set")
+        
+        # Get all activities for this date
+        activities = self.get_activities_for_date(date if isinstance(date, QDate) else QDate.fromString(date, "yyyy-MM-dd"))
+        
+        # Convert activities to time ranges in minutes
+        def time_to_minutes(t):
+            if isinstance(t, QTime):
+                return t.hour() * 60 + t.minute()
+            elif isinstance(t, str):
+                try:
+                    h, m = map(int, t.split(':'))
+                    return h * 60 + m
+                except:
+                    return 0
+            return 0
+        
+        occupied_ranges = []
+        for act in activities:
+            start_min = time_to_minutes(act['start_time'])
+            end_min = time_to_minutes(act['end_time'])
+            occupied_ranges.append((start_min, end_min))
+        
+        occupied_ranges.sort()
+        
+        # Find gaps
+        empty_slots = []
+        
+        # Check gap from start_hour to first activity
+        if occupied_ranges:
+            first_start = occupied_ranges[0][0]
+            start_min = start_hour * 60
+            if first_start > start_min + min_duration_minutes:
+                duration = first_start - start_min
+                empty_slots.append({
+                    'start_time': QTime(start_min // 60, start_min % 60),
+                    'end_time': QTime(first_start // 60, first_start % 60),
+                    'duration_minutes': duration
+                })
+        else:
+            # No activities, entire day is empty
+            total_minutes = (end_hour - start_hour) * 60
+            if total_minutes >= min_duration_minutes:
+                empty_slots.append({
+                    'start_time': QTime(start_hour, 0),
+                    'end_time': QTime(end_hour, 0),
+                    'duration_minutes': total_minutes
+                })
+                return empty_slots
+        
+        # Check gaps between activities
+        for i in range(len(occupied_ranges) - 1):
+            _, current_end = occupied_ranges[i]
+            next_start, _ = occupied_ranges[i + 1]
+            
+            gap_duration = next_start - current_end
+            if gap_duration >= min_duration_minutes:
+                empty_slots.append({
+                    'start_time': QTime(current_end // 60, current_end % 60),
+                    'end_time': QTime(next_start // 60, next_start % 60),
+                    'duration_minutes': gap_duration
+                })
+        
+        # Check gap from last activity to end_hour
+        if occupied_ranges:
+            last_end = occupied_ranges[-1][1]
+            end_min = end_hour * 60
+            if end_min > last_end + min_duration_minutes:
+                duration = end_min - last_end
+                empty_slots.append({
+                    'start_time': QTime(last_end // 60, last_end % 60),
+                    'end_time': QTime(end_hour, 0),
+                    'duration_minutes': duration
+                })
+        
+        return empty_slots
+
+    def add_todo_item(self, activity_id, text):
+        if not self.conn or not self.cursor:
+            raise ValueError("Database connection not set")
+        self.cursor.execute("INSERT INTO todo_items (activity_id, text) VALUES (?, ?)", (activity_id, text))
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def get_todo_items(self, activity_id):
+        if not self.conn or not self.cursor:
+            raise ValueError("Database connection not set")
+        self.cursor.execute("SELECT id, text, completed FROM todo_items WHERE activity_id = ?", (activity_id,))
+        return self.cursor.fetchall()
+
+    def update_todo_item(self, item_id, text, completed):
+        if not self.conn or not self.cursor:
+            raise ValueError("Database connection not set")
+        self.cursor.execute("UPDATE todo_items SET text = ?, completed = ? WHERE id = ?", (text, completed, item_id))
+        self.conn.commit()
+
+    def delete_todo_item(self, item_id):
+        if not self.conn or not self.cursor:
+            raise ValueError("Database connection not set")
+        self.cursor.execute("DELETE FROM todo_items WHERE id = ?", (item_id,))
+        self.conn.commit()
+
+    def get_todo_item(self, item_id):
+        if not self.conn or not self.cursor:
+            raise ValueError("Database connection not set")
+        self.cursor.execute("SELECT id, text, completed FROM todo_items WHERE id = ?", (item_id,))
+        return self.cursor.fetchone()

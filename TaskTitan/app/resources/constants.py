@@ -64,7 +64,7 @@ VIEW_NAMES = {
     DASHBOARD_VIEW: "Dashboard",
     ACTIVITIES_VIEW: "Activities",
     GOALS_VIEW: "Goals",
-    PRODUCTIVITY_VIEW: "Productivity",
+    PRODUCTIVITY_VIEW: "Daily Tracker",
     POMODORO_VIEW: "Pomodoro",
     WEEKLY_PLAN_VIEW: "Weekly Plan",
     SETTINGS_VIEW: "Settings"

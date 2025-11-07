@@ -210,71 +210,9 @@ class PomodoroWidget(QWidget):
         
         main_layout.addWidget(content)
         
-        # Apply styles
-        self.setStyleSheet("""
-            #pomodoroHeader {
-                background-color: #FFFFFF;
-                border-top-left-radius: 8px;
-                border-top-right-radius: 8px;
-            }
-            #pomodoroTitle {
-                color: #111827;
-            }
-            #pomodoroSettingsButton {
-                background-color: #4F46E5;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-            #pomodoroSettingsButton:hover {
-                background-color: #4338CA;
-            }
-            #pomodoroSettingsButton:pressed {
-                background-color: #3730A3;
-            }
-            #pomodoroSeparator {
-                background-color: #E5E7EB;
-            }
-            #pomodoroStateLabel {
-                font-size: 14px;
-                color: #6B7280;
-            }
-            #pomodoroTimeDisplay {
-                font-size: 48px;
-                font-weight: bold;
-                color: #1F2937;
-            }
-            QProgressBar {
-                border: 1px solid #E5E7EB;
-                border-radius: 4px;
-                background-color: #F9FAFB;
-                text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #4F46E5;
-                width: 1px;
-            }
-            QPushButton {
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QGroupBox {
-                font-weight: bold;
-                border: 1px solid #E5E7EB;
-                border-radius: 8px;
-                margin-top: 16px;
-                padding-top: 16px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top center;
-                padding: 0 10px;
-                color: #4F46E5;
-            }
-        """)
+        # Remove hardcoded styles - theme system handles styling via object names
+        # Object names are already set: pomodoroHeader, pomodoroTitle, pomodoroSettingsButton,
+        # pomodoroSeparator, pomodoroStateLabel, pomodoroTimeDisplay
         
         # Load statistics
         self.loadStatistics()

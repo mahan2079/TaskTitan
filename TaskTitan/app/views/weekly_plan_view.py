@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                            QPushButton, QFrame, QGraphicsView, QGraphicsScene, 
                            QGraphicsRectItem, QGraphicsTextItem, QGraphicsLineItem,
                            QGraphicsEllipseItem, QSlider, QSizePolicy, QScrollArea, QMenu, QDialog, QMainWindow, QGraphicsProxyWidget,
-                           QGraphicsPathItem)
+                           QGraphicsPathItem, QStackedWidget)
 from PyQt6.QtCore import Qt, QDate, QTime, QRectF, QTimer, QPointF, pyqtSignal
 from PyQt6.QtGui import QIcon, QFont, QColor, QPen, QBrush, QPainterPath, QPainter
 from datetime import datetime, timedelta
@@ -15,6 +15,7 @@ import random
 
 from app.resources import get_icon
 from app.models.activities_manager import ActivitiesManager
+from .daily_plan_view import DailyPlanView
 
 
 class ActivityDetailsDialog(QDialog):
@@ -68,74 +69,8 @@ class ActivityDetailsDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Set dialog styling with improved contrast
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #FFFFFF;
-                border-radius: 8px;
-                border: 1px solid #D1D5DB;
-            }
-            QLabel {
-                color: #1F2937;
-                font-size: 14px;
-            }
-            QLabel#title {
-                font-size: 18px;
-                font-weight: bold;
-                color: #111827;
-            }
-            QLabel#subtitle {
-                font-size: 16px;  
-                font-weight: bold;
-                color: #4B5563;
-            }
-            QLabel#sectionHeader {
-                font-size: 16px;
-                font-weight: bold;
-                color: #374151;
-                margin-top: 10px;
-            }
-            QPushButton {
-                background-color: #F3F4F6;
-                border: 1px solid #D1D5DB;
-                border-radius: 6px;
-                padding: 8px 12px;
-                color: #374151;
-                font-weight: bold;
-                font-size: 13px;
-                min-height: 36px;
-            }
-            QPushButton:hover {
-                background-color: #E5E7EB;
-            }
-            QPushButton#primaryBtn {
-                background-color: #4F46E5;
-                color: white;
-                border: none;
-            }
-            QPushButton#primaryBtn:hover {
-                background-color: #4338CA;
-            }
-            QPushButton#deleteBtn {
-                background-color: #FEE2E2;
-                color: #B91C1C;
-                border: 1px solid #FECACA;
-            }
-            QPushButton#deleteBtn:hover {
-                background-color: #FEE2E2;
-                color: #991B1B;
-            }
-            QFrame#detailsItem {
-                background-color: #F9FAFB;
-                border-radius: 6px;
-                padding: 10px;
-                border: 1px solid #E5E7EB;
-            }
-            QLabel#icon {
-                font-size: 18px;
-                min-width: 30px;
-            }
-        """)
+        # Remove hardcoded stylesheet - let theme system handle styling
+        # The theme system already provides QDialog styling
         
         # Activity header with type indicator
         header_layout = QHBoxLayout()
@@ -145,14 +80,9 @@ class ActivityDetailsDialog(QDialog):
         type_indicator.setFixedSize(32, 32)
         
         activity_type = self.activity.get('type', '')
-        if activity_type == 'task':
-            type_indicator.setStyleSheet("background-color: #F87171; border-radius: 16px;")
-        elif activity_type == 'event':
-            type_indicator.setStyleSheet("background-color: #818CF8; border-radius: 16px;")
-        elif activity_type == 'habit':
-            type_indicator.setStyleSheet("background-color: #34D399; border-radius: 16px;")
-        else:
-            type_indicator.setStyleSheet("background-color: #9CA3AF; border-radius: 16px;")
+        type_indicator.setProperty("data-activity-type", activity_type)
+        # Theme system will style this via QFrame[data-activity-type="..."]
+        type_indicator.setStyleSheet("border-radius: 16px;")
             
         header_layout.addWidget(type_indicator)
         
@@ -175,7 +105,8 @@ class ActivityDetailsDialog(QDialog):
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
         separator.setFrameShadow(QFrame.Shadow.Sunken)
-        separator.setStyleSheet("background-color: #E5E7EB; border: none; height: 2px;")
+        separator.setFixedHeight(2)
+        # Theme system will handle separator styling
         layout.addWidget(separator)
         
         # Details section
@@ -517,7 +448,8 @@ class WeeklyPlanView(QWidget):
         self.loadActivities()
         
         # Set background color
-        self.setStyleSheet("background-color: #F9FAFB;")
+        # Let global theme handle background
+        self.setStyleSheet("")
         
         # Connect to parent signals if available
         self.connectParentSignals()
@@ -527,105 +459,37 @@ class WeeklyPlanView(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(15)
-        
-        # Set base styles
-        self.setStyleSheet("""
-            QWidget {
-                font-family: 'Segoe UI', Arial, sans-serif;
-            }
-            QPushButton {
-                border-radius: 6px;
-                padding: 8px 12px;
-                background-color: #F3F4F6;
-                border: 1px solid #D1D5DB;
-                color: #374151;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #E5E7EB;
-            }
-            QPushButton#primaryBtn {
-                background-color: #4F46E5;
-                color: white;
-                border: none;
-            }
-            QPushButton#primaryBtn:hover {
-                background-color: #4338CA;
-            }
-            QSlider::groove:horizontal {
-                height: 4px;
-                background: #D1D5DB;
-                border-radius: 2px;
-            }
-            QSlider::handle:horizontal {
-                background: #4F46E5;
-                width: 16px;
-                height: 16px;
-                margin: -6px 0;
-                border-radius: 8px;
-            }
-            QLabel#title {
-                font-size: 18px;
-                font-weight: bold;
-                color: #111827;
-            }
-        """)
-        
+
+        # Clear base inline styles so theme can take over
+        self.setStyleSheet("")
+
         # Add a fancy header with gradient background
-        header_frame = QFrame()
-        header_frame.setStyleSheet("""
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6366F1, stop:1 #8B5CF6);
-            border-radius: 10px;
-            padding: 10px;
-        """)
+        header_frame = QFrame(objectName="weeklyHeader")
+        header_frame.setProperty("data-card", "true")
         header_frame.setFixedHeight(70)
         header_layout = QHBoxLayout(header_frame)
         header_layout.setContentsMargins(15, 5, 15, 5)
-        
+
         # Title and navigation
         nav_layout = QHBoxLayout()
-        
+
         # Week navigation buttons
         prev_week_btn = QPushButton("◀ Previous Week")
-        prev_week_btn.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 255, 255, 0.2);
-                color: white;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.3);
-            }
-        """)
         prev_week_btn.clicked.connect(self.previousWeek)
         header_layout.addWidget(prev_week_btn)
-        
+
         # Week display
         self.week_label = QLabel()
         self.week_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.week_label.setStyleSheet("""
-            font-size: 18px; 
-            font-weight: bold; 
-            color: white;
-        """)
+        self.week_label.setObjectName("weeklyWeekLabel")
         self.updateWeekLabel()
         header_layout.addWidget(self.week_label, 1)
-        
+
         # Next week button
         next_week_btn = QPushButton("Next Week ▶")
-        next_week_btn.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 255, 255, 0.2);
-                color: white;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.3);
-            }
-        """)
         next_week_btn.clicked.connect(self.nextWeek)
         header_layout.addWidget(next_week_btn)
-        
+
         # Today button with calendar icon
         today_btn = QPushButton("Today")
         today_icon = get_icon("calendar-today")
@@ -633,47 +497,40 @@ class WeeklyPlanView(QWidget):
             today_btn.setIcon(today_icon)
         else:
             today_btn.setText("📅 Today")
-        today_btn.setStyleSheet("""
-            QPushButton {
-                background-color: white;
-                color: #4F46E5;
-                font-weight: bold;
-                border: none;
-                padding: 8px 16px;
-            }
-            QPushButton:hover {
-                background-color: #F9FAFB;
-            }
-        """)
+        # Themed by global QSS
+        today_btn.setStyleSheet("")
         today_btn.clicked.connect(self.goToCurrentWeek)
         header_layout.addWidget(today_btn)
         
+        # View toggle button
+        self.view_toggle_btn = QPushButton("Daily View")
+        self.view_toggle_btn.setCheckable(True)
+        self.view_toggle_btn.clicked.connect(self.toggleView)
+        header_layout.addWidget(self.view_toggle_btn)
+
         main_layout.addWidget(header_frame)
-        
-        # Controls panel
-        controls_panel = QFrame()
-        controls_panel.setStyleSheet("""
-            background-color: white;
-            border-radius: 10px;
-            border: 1px solid #E5E7EB;
-        """)
-        controls_layout = QHBoxLayout(controls_panel)
-        controls_layout.setContentsMargins(15, 10, 15, 10)
-        
+
+        # Controls panel (reduced height) - only visible in weekly view
+        self.controls_panel = QFrame()
+        self.controls_panel.setProperty("data-card", "true")
+        self.controls_panel.setMaximumHeight(56)
+        controls_layout = QHBoxLayout(self.controls_panel)
+        controls_layout.setContentsMargins(12, 6, 12, 6)
+
         # Zoom controls
         zoom_label = QLabel("Zoom:")
-        zoom_label.setStyleSheet("font-weight: bold;")
         controls_layout.addWidget(zoom_label)
-        
+
         self.zoom_slider = QSlider(Qt.Orientation.Horizontal)
         self.zoom_slider.setRange(int(self.min_zoom * 100), int(self.max_zoom * 100))
         self.zoom_slider.setValue(int(self.zoom_factor * 100))
         self.zoom_slider.valueChanged.connect(self.handleZoomSlider)
-        self.zoom_slider.setMaximumWidth(150)
+        self.zoom_slider.setMaximumWidth(140)
+        self.zoom_slider.setFixedHeight(14)
         controls_layout.addWidget(self.zoom_slider)
-        
+
         zoom_out_btn = QPushButton()
-        zoom_out_btn.setFixedSize(30, 30)
+        zoom_out_btn.setFixedSize(24, 24)
         zoom_out_icon = get_icon("zoom-out")
         if not zoom_out_icon.isNull():
             zoom_out_btn.setIcon(zoom_out_icon)
@@ -682,9 +539,9 @@ class WeeklyPlanView(QWidget):
         zoom_out_btn.setToolTip("Zoom Out")
         zoom_out_btn.clicked.connect(self.zoomOut)
         controls_layout.addWidget(zoom_out_btn)
-        
+
         zoom_in_btn = QPushButton()
-        zoom_in_btn.setFixedSize(30, 30)
+        zoom_in_btn.setFixedSize(24, 24)
         zoom_in_icon = get_icon("zoom-in")
         if not zoom_in_icon.isNull():
             zoom_in_btn.setIcon(zoom_in_icon)
@@ -693,72 +550,59 @@ class WeeklyPlanView(QWidget):
         zoom_in_btn.setToolTip("Zoom In")
         zoom_in_btn.clicked.connect(self.zoomIn)
         controls_layout.addWidget(zoom_in_btn)
-        
+
         reset_btn = QPushButton("Reset View")
         reset_icon = get_icon("reset")
         if not reset_icon.isNull():
             reset_btn.setIcon(reset_icon)
         reset_btn.clicked.connect(self.resetView)
         controls_layout.addWidget(reset_btn)
-        
-        # Add filter options
+
+        # Right spacer
         controls_layout.addStretch(1)
-        
-        # Legend section
-        legend_label = QLabel("Activity Types:")
-        legend_label.setStyleSheet("font-weight: bold;")
-        controls_layout.addWidget(legend_label)
-        
-        # Task color
-        task_color = QFrame()
-        task_color.setFixedSize(16, 16)
-        task_color.setStyleSheet("background-color: #F87171; border-radius: 8px;")
-        controls_layout.addWidget(task_color)
-        controls_layout.addWidget(QLabel("Task"))
-        
-        # Event color
-        event_color = QFrame()
-        event_color.setFixedSize(16, 16)
-        event_color.setStyleSheet("background-color: #818CF8; border-radius: 8px;")
-        controls_layout.addWidget(event_color)
-        controls_layout.addWidget(QLabel("Event"))
-        
-        # Habit color
-        habit_color = QFrame()
-        habit_color.setFixedSize(16, 16)
-        habit_color.setStyleSheet("background-color: #34D399; border-radius: 8px;")
-        controls_layout.addWidget(habit_color)
-        controls_layout.addWidget(QLabel("Habit"))
-        
-        main_layout.addWidget(controls_panel)
-        
-        # Create the weekly view in a graphics scene
+
+        main_layout.addWidget(self.controls_panel)
+
+        # Create the stacked widget
+        self.stacked_widget = QStackedWidget()
+        main_layout.addWidget(self.stacked_widget, 1)
+
+        # Create the weekly view
+        self.weekly_view_widget = QWidget()
+        weekly_layout = QVBoxLayout(self.weekly_view_widget)
+        weekly_layout.setContentsMargins(0, 0, 0, 0)
         self.view = QGraphicsView()
         self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        
-        # Set nice background
+        # Enable smooth scrolling
+        self.view.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.view.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.scene = QGraphicsScene(self)
-        self.scene.setBackgroundBrush(QBrush(QColor("#F9FAFB")))
         self.view.setScene(self.scene)
-        
-        # Add a border to the view
         self.view.setFrameShape(QFrame.Shape.StyledPanel)
-        self.view.setStyleSheet("""
-            border: 1px solid #D1D5DB;
-            background-color: #F9FAFB;
-            border-radius: 8px;
-        """)
-        
-        main_layout.addWidget(self.view, 1)
-        
-        # Status message
-        self.status_label = QLabel("Click and drag to pan, use Ctrl+scroll to zoom")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("color: #6B7280; font-style: italic;")
-        main_layout.addWidget(self.status_label)
+        self.view.setStyleSheet("")
+        weekly_layout.addWidget(self.view)
+        self.stacked_widget.addWidget(self.weekly_view_widget)
+
+        # Create the daily view
+        self.daily_view = DailyPlanView(self)
+        self.stacked_widget.addWidget(self.daily_view)
+
+    def toggleView(self):
+        if self.view_toggle_btn.isChecked():
+            # Show daily view
+            self.view_toggle_btn.setText("Weekly View")
+            self.stacked_widget.setCurrentWidget(self.daily_view)
+            # Hide zoom controls for daily view
+            self.controls_panel.setVisible(False)
+        else:
+            # Show weekly view
+            self.view_toggle_btn.setText("Daily View")
+            self.stacked_widget.setCurrentWidget(self.weekly_view_widget)
+            # Show zoom controls for weekly view
+            self.controls_panel.setVisible(True)
     
     def getStartOfWeek(self, date):
         """Get the first day (Monday) of the week containing the given date."""
@@ -805,8 +649,7 @@ class WeeklyPlanView(QWidget):
         self.view.resetTransform()
         self.view.scale(self.zoom_factor, self.zoom_factor)
         
-        # Update status message
-        self.status_label.setText(f"Zoom: {int(self.zoom_factor * 100)}% - Click and drag to pan")
+        # Zoom applied
     
     def resetView(self):
         """Reset the view to the default state."""
@@ -817,9 +660,6 @@ class WeeklyPlanView(QWidget):
             return
         self.view.setSceneRect(self.scene.itemsBoundingRect())
         self.view.centerOn(0, 0)
-        
-        # Update status message
-        self.status_label.setText("View reset - Click and drag to pan")
     
     def previousWeek(self):
         """Go to the previous week."""
@@ -846,7 +686,6 @@ class WeeklyPlanView(QWidget):
         # Check if we have an activities manager
         if not hasattr(self, 'activities_manager') or not self.activities_manager:
             print("ERROR: Activities manager not available")
-            self.status_label.setText("Error: Activities manager not available")
             return
         
         print(f"Loading activities for week starting {self.current_week_start.toString()}")
@@ -890,9 +729,24 @@ class WeeklyPlanView(QWidget):
         # Add activities to the grid
         self.addActivitiesToGrid()
         
-        # Make sure the whole grid is visible
+        # Set scene rect to cover the full grid for proper scrolling
+        # Calculate grid dimensions
+        day_width = 150
+        hour_height = 180
+        grid_height = 24 * hour_height
+        grid_width = 7 * day_width
+        hour_label_width = 90
+        
+        # Set scene rect to include full grid plus headers
+        scene_rect = QRectF(0, -50, grid_width + hour_label_width, grid_height + 50)
+        self.view.setSceneRect(scene_rect)
+        
+        # Also ensure items bounding rect is included if items extend beyond
         if self.scene.items():
-            self.view.setSceneRect(self.scene.itemsBoundingRect().adjusted(-20, -20, 20, 20))
+            items_rect = self.scene.itemsBoundingRect()
+            # Combine both rects to ensure everything is visible
+            combined_rect = scene_rect.united(items_rect)
+            self.view.setSceneRect(combined_rect.adjusted(-20, -20, 20, 20))
             
         print("Week view updated")
     
@@ -1086,7 +940,6 @@ class WeeklyPlanView(QWidget):
         """Add activities to the weekly grid."""
         if not self.activities:
             # No activities to display
-            self.status_label.setText(f"No activities found for this week ({self.current_week_start.toString('d MMM')} - {self.current_week_start.addDays(6).toString('d MMM')})")
             return
         
         # Constants
@@ -1361,9 +1214,6 @@ class WeeklyPlanView(QWidget):
         
         # Set scene event handler
         self.scene.mousePressEvent = self.handleSceneClick
-        
-        # Update status
-        self.status_label.setText(f"Showing {len(self.activities)} activities")
 
     def handleSceneClick(self, event):
         """Handle clicks on the scene, showing activity details or toggling completion."""
@@ -1573,6 +1423,9 @@ class WeeklyPlanView(QWidget):
                 
             # Update the visuals for this activity
             self.updateActivityVisuals(activity_id, is_completed)
+            
+            # Sync with daily view
+            self.syncWithDailyView()
             
             # If parent has onActivityCompleted handler, call it
             if hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'onActivityCompleted'):
@@ -1792,13 +1645,28 @@ class WeeklyPlanView(QWidget):
         if hasattr(self.parent, 'showEditActivityDialog'):
             self.parent.showEditActivityDialog(activity_id, activity_type)
             self.loadActivities()  # Reload after edit
+            # Sync with daily view
+            self.syncWithDailyView()
     
     def deleteActivity(self, activity_id, activity_type):
         """Delete an activity."""
         if hasattr(self.parent, 'activities_manager'):
             self.parent.activities_manager.delete_activity(activity_id)
             self.loadActivities()  # Reload to reflect changes
+            # Sync with daily view
+            self.syncWithDailyView()
     
     def refresh(self):
         """Refresh the view data."""
         self.loadActivities()
+        # Sync with daily view
+        self.syncWithDailyView()
+    
+    def syncWithDailyView(self):
+        """Sync changes with the daily plan view."""
+        if hasattr(self, 'daily_view') and self.daily_view:
+            self.daily_view.refresh()
+        
+        # Also refresh activities view if it exists
+        if hasattr(self.parent, 'activities_view') and self.parent.activities_view:
+            self.parent.activities_view.refresh()

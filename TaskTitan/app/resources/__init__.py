@@ -29,8 +29,7 @@ __all__ = [
     'GOALS_VIEW',
     'PRODUCTIVITY_VIEW',
     'POMODORO_VIEW',
-    'WEEKLY_VIEW',
-    'DAILY_VIEW',
+    'WEEKLY_PLAN_VIEW',
     'SETTINGS_VIEW',
     'VIEW_NAMES'
 ] 
