@@ -1,253 +1,127 @@
-# TaskTitan
 
-<img src="Logo.png" alt="TaskTitan Logo" width="300">
+<div align="center">
+  <img src="Logo.png" alt="TaskTitan Logo" width="200">
+  <br>
+  <h1>TaskTitan</h1>
+  <p>
+    <strong>Stop Juggling Apps. Start Achieving Goals.</strong>
+  </p>
+  <p>
+    TaskTitan is your all-in-one desktop command center for productivity. <br />
+    Unify your tasks, goals, habits, and focused work sessions in one beautiful, powerful application.
+  </p>
+  <p>
+    <a href="https://github.com/mahan2079/TaskTitan/actions/workflows/tests.yml"><img src="https://github.com/mahan2079/TaskTitan/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+    <a href="https://github.com/mahan2079/TaskTitan/actions/workflows/release.yml"><img src="https://github.com/mahan2079/TaskTitan/actions/workflows/release.yml/badge.svg" alt="Release"></a>
+    <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
+  </p>
+</div>
 
-TaskTitan is a feature-rich and modern task management application designed to help users organize their goals, habits, routines, and productivity sessions effectively. With a sleek interface, advanced features, and customization options, TaskTitan ensures a seamless experience for planning and managing your time.
+---
 
-## Features
+## ✨ Why TaskTitan?
 
-### Core Features
+Tired of switching between a to-do list, a habit tracker, a calendar, and a Pomodoro timer? TaskTitan integrates these tools into a single, seamless workflow designed to minimize distractions and maximize your output.
 
-- **Goal Management**: 
-  - Add, edit, delete, and organize hierarchical goals
-  - Set due dates, priorities, and tags
-  - Track progress visually
+-   🧠 **Become an Architect of Your Life**: Go beyond simple to-do lists. With hierarchical goal management, you can break down your biggest ambitions into manageable steps and watch your progress come to life.
 
-- **Activity Management**:
-  - Unified system for tasks, events, and habits
-  - Daily, weekly, and recurring activities
-  - Categories and priorities
+-   📊 **Visualize Your Success**: Don't just work—see the results. With integrated charts and analytics for productivity, mood, and time tracking, you get a clear view of your accomplishments and areas for improvement.
 
-- **Habit Tracking**: 
-  - Create recurring habits with time and day specifications
-  - Integrated habit progress into the daily planner
-  - Streak tracking
+-   🔁 **Build Lasting Habits**: Our dedicated habit tracker helps you build positive routines and break bad ones. Track your streaks and stay motivated with a system designed for consistency.
 
-- **Daily Planner**: 
-  - Populate tasks, habits, routines, and goals for each day
-  - Integrated calendar view for efficient planning
-  - Time blocking
+-   🍅 **Master Deep Work**: The built-in Pomodoro timer, complete with distraction tracking, helps you get into a state of flow and maintain focus on what truly matters.
 
-- **Pomodoro Timer**: 
-  - Focus timer with customizable work and break intervals
-  - Distraction tracking for improved productivity insights
-  - Session history
+## 🖼️ Gallery
 
-- **Productivity Tracking**:
-  - Daily time tracking
-  - Energy and mood logging
-  - Journal entries
-  - Analytics and reports
+*(A sneak peek of the TaskTitan interface. Add your screenshots here!)*
 
-### Advanced Features
+| Dashboard View | Daily Planner | Productivity Tracker |
+| :---: | :---: | :---: |
+| `[Screenshot of Dashboard]` | `[Screenshot of Daily Planner]` | `[Screenshot of Productivity Tracker]` |
 
-- **Auto-Backup**: Scheduled automatic backups with retention policies
-- **Data Validation**: Integrity checks and recovery mechanisms
-- **Update Notifications**: Automatic update checking
-- **System Notifications**: Reminders and alerts
-- **Keyboard Shortcuts**: Comprehensive shortcut system
-- **Search**: Powerful search across all data
-- **Themes**: Multiple themes with dark/light modes
+---
 
-### Customization
+## 🚀 Features at a Glance
 
-- **Color Themes**: Elegant dark mode with customizable colors
-- **Customizable Goals and Events**: Attach files, assign tags, and organize by priority
-- **Export and Import**: JSON and CSV formats
-- **Visualization**: Charts and visual breakdowns
+| Feature | Description |
+| :--- | :--- |
+| 🎯 **Goal Management** | Hierarchical goals, deadlines, priorities, and progress tracking. |
+| ✅ **Unified Activities** | Manage tasks, events, and habits in one place. |
+| 🗓️ **Daily & Weekly Planner** | Plan your time with an integrated calendar and time-blocking. |
+| 💪 **Habit Tracking** | Create, track, and analyze your habits and streaks. |
+| 🍅 **Pomodoro Timer** | Customizable focus and break intervals with session history. |
+| 📈 **Productivity Analytics** | Track time, mood, and energy with visual reports. |
+| 🎨 **Themes** | Switch between beautiful dark and light modes. |
+| 🔍 **Powerful Search** | Instantly find any task, goal, or note across the app. |
+| 💾 **Auto-Backup** | Keep your data safe with automatic, scheduled backups. |
 
-## Installation
 
-### From Source
+## 🛠️ Tech Stack
 
-1. Clone the repository:
-```bash
-git clone https://github.com/mahan2079/TaskTitan.git
-cd TaskTitan
-```
+TaskTitan is built with a modern and robust set of technologies, making it both powerful and extensible.
 
-2. Create virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+-   **Backend**: Python 3.8+
+-   **GUI**: PyQt6
+-   **Database**: SQLite
+-   **Charting**: Matplotlib & pyqtgraph
+-   **Code Quality**: `black`, `flake8`, `isort`, `mypy`
 
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+---
 
-4. Run the application:
-```bash
-python TaskTitan/run.py
-```
+## ⚡ Quick Start
 
-### Building Executable
+Get up and running in less than a minute.
 
-See [BUILD.md](TaskTitan/BUILD.md) for detailed instructions.
+1.  **Clone the repo:**
+    ```bash
+    git clone https://github.com/mahan2079/TaskTitan.git && cd TaskTitan
+    ```
+
+2.  **Set up your environment:**
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
+
+3.  **Install dependencies:**
+    ```bash
+    pip install -r TaskTitan/requirements.txt
+    ```
+
+4.  **Launch!**
+    ```bash
+    python TaskTitan/run.py
+    ```
+
+## 🏗️ Build Your Own Executable
+
+Want to build a standalone version of TaskTitan? We use PyInstaller.
 
 ```bash
 pip install pyinstaller
-pyinstaller tasktitan.spec
+pyinstaller TaskTitan/tasktitan.spec
 ```
+Find your shiny new executable in the `TaskTitan/dist` folder. For more details, see the [BUILD.md](TaskTitan/BUILD.md) guide.
 
-## Requirements
+---
 
-- Python 3.8 or later
-- PyQt6
-- Matplotlib
-- SQLite3
-- darkdetect
-- qasync
-- pyqtgraph
+## 🤝 Join the Development
 
-See `requirements.txt` for complete list.
+TaskTitan is built by and for its users. We welcome contributions of all kinds, from bug fixes to new features.
 
-## Documentation
+-   **Found a bug?** [Open an issue](https://github.com/mahan2079/TaskTitan/issues).
+-   **Have an idea?** [Start a discussion](https://github.com/mahan2079/TaskTitan/discussions).
+-   **Ready to contribute?** Check out our [Developer Guide](TaskTitan/docs/DEVELOPMENT.md) to get started.
 
-- [User Guide](TaskTitan/docs/USER_GUIDE.md) - Complete user manual
-- [Developer Guide](TaskTitan/docs/DEVELOPMENT.md) - Setup and contribution guide
-- [API Documentation](TaskTitan/docs/API.md) - API reference
-- [Architecture](TaskTitan/docs/ARCHITECTURE.md) - System architecture overview
-
-## Usage
-
-### Quick Start
-
-1. Launch TaskTitan
-2. Create your first goal or activity
-3. Set up daily habits
-4. Use the Pomodoro timer for focused work
-5. Track your productivity in the Daily Tracker
-
-### Keyboard Shortcuts
-
-- `Ctrl+K`: Search
-- `Ctrl+1-6`: Switch views
-- `Ctrl+,`: Settings
-- `Ctrl+B`: Toggle sidebar
-
-See [User Guide](TaskTitan/docs/USER_GUIDE.md) for complete list.
-
-## Data Management
-
-### Backup
-
-- Manual: `File > Backup Data`
-- Automatic: Configure in Settings
-- Location: `data/backups/`
-
-### Restore
-
-- `File > Restore Data`
-- Select backup file
-- Confirm restore
-
-### Export/Import
-
-- Export: `File > Export` (JSON/CSV)
-- Import: `File > Import`
-
-## Configuration
-
-Configuration is stored in `data/config.json`. Key settings:
-
-- Window preferences
-- Theme selection
-- Backup settings
-- Notification preferences
-- Performance options
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Application won't start**:
-   - Check logs: `data/logs/tasktitan.log`
-   - Verify Python version: `python --version`
-   - Reinstall dependencies
-
-2. **Database errors**:
-   - Check disk space
-   - Verify file permissions
-   - Restore from backup
-
-3. **Performance issues**:
-   - Reduce cache size in Settings
-   - Check for large attachments
-   - Disable unnecessary features
-
-See [User Guide](TaskTitan/docs/USER_GUIDE.md) for detailed troubleshooting.
-
-## Contributing
-
-We welcome contributions! See [Developer Guide](TaskTitan/docs/DEVELOPMENT.md) for:
-- Setup instructions
-- Code standards
-- Testing guidelines
-- Contribution process
-
-## Testing
-
-Run tests:
-```bash
-pytest tests/
-```
-
-With coverage:
-```bash
-pytest --cov=app --cov-report=html
-```
-
-## Code Quality
-
-We use:
-- Black for formatting
-- Flake8 for linting
-- mypy for type checking
-- isort for import sorting
-
-See [CODE_QUALITY.md](TaskTitan/CODE_QUALITY.md) for details.
+Let's build the ultimate productivity tool together!
 
 ## License
 
-Copyright 2025 Mahan Dashti Gohari
+Distributed under the Apache 2.0 License. See `LICENSE` for more information.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+## Contact
 
-    http://www.apache.org/licenses/LICENSE-2.0
+Mahan Dashti Gohari - mahan.dashiti.gohari@gmail.com
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
-## Support
-
-For help or feedback:
-- Email: mahan.dashiti.gohari@gmail.com
-- GitHub Issues: [Report Issues](https://github.com/mahan2079/TaskTitan/issues)
-
-## Credits
-
-Built with:
-- PyQt6
-- Matplotlib
-- SQLite3
-- Material Design Icons
-
-## Changelog
-
-### Version 1.0.0
-
-- Initial production release
-- Comprehensive error handling and logging
-- Security features
-- Testing infrastructure
-- Documentation
-- Performance optimizations
-- Data reliability features
-- Essential production features
+Project Link: [https://github.com/mahan2079/TaskTitan](https://github.com/mahan2079/TaskTitan)
